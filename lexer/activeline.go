@@ -1,4 +1,4 @@
-package activeline
+package lexer
 
 import (
 	"iter"
@@ -54,7 +54,93 @@ func (a *ActiveLine) CharOffset(shift int, base string) (int, bool) {
 
 // isBracket reports whether r is one of the designated delimiters.
 func isBracket(r rune) bool {
-	return strings.ContainsRune("()[]{}<>", r)
+	return strings.ContainsRune("()[]{}", r)
+}
+
+// isPunctuation reports whether r is one of operators, separators, and other parts.
+func isPunctuation(r rune) bool {
+	return strings.ContainsRune("#\"", r)
+}
+
+// consumeStringLiteral checks if s starts with a regular string literal:
+//
+//	"...", #"..."#, r##"..."##, etc.
+//
+// or a raw string literal:
+//
+//	r"...", r#"..."#, r##"..."##, etc.
+//
+// Returns the byte length of the complete literal, or 0 if it does not match.
+func consumeStringLiteral(s string) int {
+	if len(s) == 0 {
+		return 0
+	}
+
+	idx := 0
+	isRaw := false
+
+	// Check optional leading 'r'
+	if s[0] == 'r' {
+		isRaw = true
+		idx++
+	}
+
+	// Count leading '#' characters
+	numHashes := 0
+	for idx < len(s) && s[idx] == '#' {
+		numHashes++
+		idx++
+	}
+
+	// Must be followed immediately by '"'
+	if idx >= len(s) || s[idx] != '"' {
+		return 0
+	}
+
+	// If it had a leading 'r', but no hashes and no quote (handled above),
+	// ensure that an identifier like 'result' is not mistakenly matched.
+	// A raw string MUST have quotes: r"..." or r#"..."#
+	if isRaw && s[idx] != '"' {
+		return 0
+	}
+
+	// Regular string ("...") has no 'r' and no '#'
+	if !isRaw && numHashes > 0 {
+		return 0
+	}
+
+	// Advance past the opening '"'
+	idx++
+
+	// Build the closing delimiter: '"' followed by numHashes of '#'
+	closingDelimiter := `"` + strings.Repeat("#", numHashes)
+
+	// For standard strings (non-raw), handle escape sequences like \"
+	if !isRaw {
+		for idx < len(s) {
+			if s[idx] == '\\' {
+				// Skip escaped character
+				idx += 2
+				continue
+			}
+			if s[idx] == '"' {
+				return idx + 1
+			}
+			idx++
+		}
+		// Unterminated string: consume the remainder of the line/string
+		return len(s)
+	}
+
+	// For raw strings (r"..." or r#"..."#), content is literal until the closing delimiter
+	content := s[idx:]
+	closeIdx := strings.Index(content, closingDelimiter)
+	if closeIdx == -1 {
+		// Unterminated raw string: consume until end of line
+		return len(s)
+	}
+
+	return idx + closeIdx + len(closingDelimiter)
 }
 
 // Next extracts and returns the next token, advancing the internal position.
@@ -65,17 +151,25 @@ func (a *ActiveLine) Next() (string, bool) {
 		return "", false
 	}
 
+	// Attempt to match a string literal first (raw or standard)
+	if litLen := consumeStringLiteral(a.s); litLen > 0 {
+		item := a.s[:litLen]
+		a.s = a.s[litLen:]
+		return item, true
+	}
+
+	// Standard tokenization fallback
 	first, firstLen := utf8.DecodeRuneInString(a.s)
-	isAlnum := unicode.IsLetter(first) || unicode.IsDigit(first)
+	isAlnum := unicode.IsLetter(first) || unicode.IsDigit(first) || first == '_'
 
 	matchLen := -1
 	byteOffset := 0
 
 	for byteOffset < len(a.s) {
 		r, size := utf8.DecodeRuneInString(a.s[byteOffset:])
-		currAlnum := unicode.IsLetter(r) || unicode.IsDigit(r)
+		currAlnum := unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 
-		if unicode.IsSpace(r) || isBracket(r) || currAlnum != isAlnum {
+		if unicode.IsSpace(r) || isBracket(r) || isPunctuation(r) || currAlnum != isAlnum {
 			matchLen = byteOffset
 			break
 		}
