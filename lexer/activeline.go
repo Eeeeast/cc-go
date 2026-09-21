@@ -82,7 +82,7 @@ func isPunctuation(r rune) bool {
 //	r"...", r#"..."#, r##"..."##, etc.
 //
 // Returns the byte length of the complete literal, or 0 if it does not match
-// and clean conntent.
+// and decoded content.
 func consumeStringLiteral(s string) (int, string) {
 	if len(s) == 0 {
 		return 0, ""
@@ -127,17 +127,44 @@ func consumeStringLiteral(s string) (int, string) {
 
 	// For standard strings (non-raw), handle escape sequences like \"
 	if !isRaw {
+		var builder strings.Builder
 		for idx < len(s) {
 			if s[idx] == '\\' {
-				// Skip escaped character
+				if idx+1 >= len(s) {
+					builder.WriteByte('\\')
+					return len(s), builder.String()
+				}
+
+				nextChar := s[idx+1]
+				switch nextChar {
+				case 'n':
+					builder.WriteByte('\n')
+				case 't':
+					builder.WriteByte('\t')
+				case 'r':
+					builder.WriteByte('\r')
+				case '\\':
+					builder.WriteByte('\\')
+				case '"':
+					builder.WriteByte('"')
+				case '\'':
+					builder.WriteByte('\'')
+				case '0':
+					builder.WriteByte(0)
+				default:
+					builder.WriteByte('\\')
+					builder.WriteByte(nextChar)
+				}
 				idx += 2
 				continue
 			}
+
 			if s[idx] == '"' {
-				contentEnd := idx
 				totalLen := idx + 1
-				return totalLen, s[contentStart:contentEnd]
+				return totalLen, builder.String()
 			}
+
+			builder.WriteByte(s[idx])
 			idx++
 		}
 		// Unterminated string: consume the remainder of the line/string

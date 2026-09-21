@@ -68,7 +68,7 @@ func TestGoldTokenizer(t *testing.T) {
 		expected []Token
 	}{{
 		name: "main",
-		src:  "// This is the main function.\nfn main() {\n\t// Print text to the console.\n\tprintln!(\"Hello World!\");\n}",
+		src:  "// This is the main function.\nfn main() {\n\t// Print text to the console.\n\tprintln!(\"\\\"Hello World!\\\"\");\n}",
 		expected: []Token{
 			// fn main() {
 			NewSymbolToken(KindKeyword, NewSpan(2, 1), SymFn),
@@ -81,9 +81,9 @@ func TestGoldTokenizer(t *testing.T) {
 			NewSymbolToken(KindIdent, NewSpan(4, 2), sym("println")),
 			NewSymbolToken(KindPunctuation, NewSpan(4, 9), SymNot),
 			NewSymbolToken(KindDelimiter, NewSpan(4, 10), SymOpenParen),
-			NewSymbolToken(KindString, NewSpan(4, 11), sym("Hello World!")),
-			NewSymbolToken(KindDelimiter, NewSpan(4, 25), SymCloseParen),
-			NewSymbolToken(KindPunctuation, NewSpan(4, 26), SymSemi),
+			NewSymbolToken(KindString, NewSpan(4, 11), sym(`"Hello World!"`)),
+			NewSymbolToken(KindDelimiter, NewSpan(4, 29), SymCloseParen),
+			NewSymbolToken(KindPunctuation, NewSpan(4, 30), SymSemi),
 
 			// }
 			NewSymbolToken(KindDelimiter, NewSpan(5, 1), SymCloseBrace),
