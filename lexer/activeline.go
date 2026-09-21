@@ -1,12 +1,23 @@
 package lexer
 
 import (
-	"iter"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 	"unsafe"
 )
+
+type ChunkKind uint8
+
+const (
+	ChunkGeneric ChunkKind = iota // any else char chunk
+	ChunkString                   // string literal ("..." or r#"..."#)
+)
+
+type Chunk struct {
+	Kind ChunkKind
+	Val  string
+}
 
 // ActiveLine wraps a string slice and advances through tokens.
 type ActiveLine struct {
@@ -70,10 +81,11 @@ func isPunctuation(r rune) bool {
 //
 //	r"...", r#"..."#, r##"..."##, etc.
 //
-// Returns the byte length of the complete literal, or 0 if it does not match.
-func consumeStringLiteral(s string) int {
+// Returns the byte length of the complete literal, or 0 if it does not match
+// and clean conntent.
+func consumeStringLiteral(s string) (int, string) {
 	if len(s) == 0 {
-		return 0
+		return 0, ""
 	}
 
 	idx := 0
@@ -94,26 +106,24 @@ func consumeStringLiteral(s string) int {
 
 	// Must be followed immediately by '"'
 	if idx >= len(s) || s[idx] != '"' {
-		return 0
+		return 0, ""
 	}
 
 	// If it had a leading 'r', but no hashes and no quote (handled above),
 	// ensure that an identifier like 'result' is not mistakenly matched.
 	// A raw string MUST have quotes: r"..." or r#"..."#
 	if isRaw && s[idx] != '"' {
-		return 0
+		return 0, ""
 	}
 
 	// Regular string ("...") has no 'r' and no '#'
 	if !isRaw && numHashes > 0 {
-		return 0
+		return 0, ""
 	}
 
-	// Advance past the opening '"'
+	// Content after opening '"'
+	contentStart := idx + 1
 	idx++
-
-	// Build the closing delimiter: '"' followed by numHashes of '#'
-	closingDelimiter := `"` + strings.Repeat("#", numHashes)
 
 	// For standard strings (non-raw), handle escape sequences like \"
 	if !isRaw {
@@ -124,38 +134,41 @@ func consumeStringLiteral(s string) int {
 				continue
 			}
 			if s[idx] == '"' {
-				return idx + 1
+				contentEnd := idx
+				totalLen := idx + 1
+				return totalLen, s[contentStart:contentEnd]
 			}
 			idx++
 		}
 		// Unterminated string: consume the remainder of the line/string
-		return len(s)
+		return len(s), s[contentStart:]
 	}
 
 	// For raw strings (r"..." or r#"..."#), content is literal until the closing delimiter
-	content := s[idx:]
-	closeIdx := strings.Index(content, closingDelimiter)
-	if closeIdx == -1 {
+	closingDelimiter := `"` + strings.Repeat("#", numHashes)
+	closeRelIdx := strings.Index(s[contentStart:], closingDelimiter)
+	if closeRelIdx == -1 {
 		// Unterminated raw string: consume until end of line
-		return len(s)
+		return len(s), s[contentStart:]
 	}
 
-	return idx + closeIdx + len(closingDelimiter)
+	contentEnd := contentStart + closeRelIdx
+	totalLen := contentEnd + len(closingDelimiter)
+	return totalLen, s[contentStart:contentEnd]
 }
 
 // Next extracts and returns the next token, advancing the internal position.
 // Returns ("", false) when no tokens remain.
-func (a *ActiveLine) Next() (string, bool) {
+func (a *ActiveLine) Next() (Chunk, bool) {
 	a.TrimStart()
 	if len(a.s) == 0 {
-		return "", false
+		return Chunk{}, false
 	}
 
 	// Attempt to match a string literal first (raw or standard)
-	if litLen := consumeStringLiteral(a.s); litLen > 0 {
-		item := a.s[:litLen]
-		a.s = a.s[litLen:]
-		return item, true
+	if totalLen, content := consumeStringLiteral(a.s); totalLen > 0 {
+		a.s = a.s[totalLen:]
+		return Chunk{Kind: ChunkString, Val: content}, true
 	}
 
 	// Standard tokenization fallback
@@ -181,24 +194,12 @@ func (a *ActiveLine) Next() (string, bool) {
 		matchLen = len(a.s)
 	}
 
-	// Guarantee at least the first rune is consumed (matching Rust's .max(first.len_utf8())).
+	// Guarantee at least the first rune is consumed.
 	if matchLen < firstLen {
 		matchLen = firstLen
 	}
 
 	item := a.s[:matchLen]
 	a.s = a.s[matchLen:]
-	return item, true
-}
-
-// All returns a push iterator compatible with `for tok := range line.All()`.
-func (a *ActiveLine) All() iter.Seq[string] {
-	return func(yield func(string) bool) {
-		for {
-			tok, ok := a.Next()
-			if !ok || !yield(tok) {
-				return
-			}
-		}
-	}
+	return Chunk{Kind: ChunkGeneric, Val: item}, true
 }
