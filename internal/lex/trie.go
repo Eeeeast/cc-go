@@ -87,10 +87,10 @@ func buildLanguageTrie() *DoubleArrayTrie {
 	}
 
 	da := &DoubleArrayTrie{
-		base:   make([]int, 220),
-		check:  make([]int, 220),
-		output: make([]TokenType, 220),
-		piece:  make([]PuzzlePiece, 220),
+		base:   make([]int, 154),
+		check:  make([]int, 154),
+		output: make([]TokenType, 154),
+		piece:  make([]PuzzlePiece, 154),
 	}
 	da.check[daRoot] = -1
 
