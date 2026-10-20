@@ -4,26 +4,10 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
-
-// `LineNo` and `ColNo` 1-based, so 0 mean None
-type SrcPos struct {
-	SrcName string
-	LineNo  int
-	ColNo   int
-}
-
-func NewSrcPos(srcName string, lineNo int, colNo int) SrcPos {
-	return SrcPos{
-		SrcName: srcName,
-		LineNo:  lineNo,
-		ColNo:   colNo,
-	}
-}
 
 type ParseError struct {
 	Pos SrcPos
@@ -47,35 +31,12 @@ func NewParseError(l *Lexer, msg string) *ParseError {
 	}
 }
 
-// Check if a character can be the start of an identifier
 func IsIdentStart(ch rune) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
 }
 
-// Check if a character can be part of an identifier
 func IsIdentCh(ch rune) bool {
 	return IsIdentStart(ch) || (ch >= '0' && ch <= '9')
-}
-
-// Check if an identifier is a reserved keyword
-func IsReserved(ident string) bool {
-	switch ident {
-	case
-		// Currently in use and potentially unusable
-		// or confusing if chosen as a name
-		"break", "func", "else", "if",
-		"continue", "return",
-
-		// Reserved for future use
-		"default", "interface", "select", "case",
-		"defer", "go", "map", "struct",
-		"chan", "goto", "package", "switch",
-		"const", "fallthrough", "range", "type",
-		"for", "import", "var":
-		return true
-	default:
-		return false
-	}
 }
 
 type Lexer struct {
@@ -115,12 +76,10 @@ func (l *Lexer) GetPos() SrcPos {
 	return NewSrcPos(l.SrcName, l.LineNo, l.ColNo)
 }
 
-// Test if the end of the input has been reached
 func (l *Lexer) EOF() bool {
 	return l.idx >= len(l.input)
 }
 
-// Peek at a character from the input
 func (l *Lexer) PeekCh() rune {
 	if l.idx >= len(l.input) {
 		return 0
@@ -129,10 +88,9 @@ func (l *Lexer) PeekCh() rune {
 	return r
 }
 
-// Peek at a character from the input
 func (l *Lexer) PeekChAt(charOffset int) rune {
 	bytePos := l.idx
-	for i := 0; i < charOffset; i++ {
+	for range charOffset {
 		if bytePos >= len(l.input) {
 			return 0
 		}
@@ -146,10 +104,8 @@ func (l *Lexer) PeekChAt(charOffset int) rune {
 	return r
 }
 
-// Consume a character from the input
 func (l *Lexer) EatCh() rune {
 	if l.idx >= len(l.input) {
-		l.ColNo++
 		return 0
 	}
 	ch, width := utf8.DecodeRuneInString(l.input[l.idx:])
@@ -164,7 +120,6 @@ func (l *Lexer) EatCh() rune {
 	return ch
 }
 
-// Match a single character in the input
 func (l *Lexer) MatchChar(ch rune) bool {
 	if l.PeekCh() == ch {
 		l.EatCh()
@@ -173,7 +128,6 @@ func (l *Lexer) MatchChar(ch rune) bool {
 	return false
 }
 
-// Peek for a sequence of characters
 func (l *Lexer) PeekChars(chars []rune) bool {
 	bytePos := l.idx
 	for _, expected := range chars {
@@ -189,7 +143,6 @@ func (l *Lexer) PeekChars(chars []rune) bool {
 	return true
 }
 
-// Match characters in the input
 func (l *Lexer) MatchChars(chars []rune) bool {
 	if !l.PeekChars(chars) {
 		return false
@@ -200,12 +153,10 @@ func (l *Lexer) MatchChars(chars []rune) bool {
 	return true
 }
 
-// Peek for a string
 func (l *Lexer) PeekStr(s string) bool {
 	return strings.HasPrefix(l.input[l.idx:], s)
 }
 
-// Consume characters until the end of a single-line comment
 func (l *Lexer) EatComment() {
 	for !l.EOF() {
 		if l.EatCh() == '\n' {
@@ -214,7 +165,6 @@ func (l *Lexer) EatComment() {
 	}
 }
 
-// Consume characters until the end of a multi-line comment
 func (l *Lexer) EatMultiComment() error {
 	depth := 1
 	for {
@@ -234,7 +184,6 @@ func (l *Lexer) EatMultiComment() error {
 	return nil
 }
 
-// Consume whitespace
 func (l *Lexer) EatWS() error {
 	for !l.EOF() {
 		ch := l.PeekCh()
@@ -262,7 +211,146 @@ func (l *Lexer) EatWS() error {
 	return nil
 }
 
-// Match a string in the input, ignoring preceding whitespace
+// NextToken реализует механизм чтения токенов на основе конечного автомата
+// - При пробеле/табуляции: увеличить ColNo и продолжить выполнение
+// - При новой строке (\n): увеличить LineNo, сбросить ColNo=1 и продолжить выполнение
+// - При комментарии (// или /*): распознать токен и пропустить его
+// - При буквах: пройтись по двойному массиву для поиска ключевых слов (>>) или прочитать идентификатор (><)
+// - При числах/кавычках: прочитать соответствующий литерал (><)
+// - При операторах/разделителях: выполнить самый длинный переход в двойном массиве (<> или >|)
+func (l *Lexer) NextToken() (Token, error) {
+	for {
+		if err := l.EatWS(); err != nil {
+			return Token{}, err
+		}
+
+		pos := l.GetPos()
+		if l.EOF() {
+			return Token{
+				Type:   TokenEOF,
+				Piece:  PieceTerminator,
+				Lexeme: "",
+				Pos:    pos,
+			}, nil
+		}
+
+		ch := l.PeekCh()
+
+		// Ключевые слова (>>, >|), логические литералы (><) и идентификаторы (><)
+		if IsIdentStart(ch) {
+			startIdx := l.idx
+			state := daRoot
+			inTrie := true
+
+			for !l.EOF() && IsIdentCh(l.PeekCh()) {
+				r := l.EatCh()
+				if inTrie {
+					if next, ok := defaultTrie.Step(state, r); ok {
+						state = next
+					} else {
+						inTrie = false
+					}
+				}
+			}
+
+			lexeme := l.input[startIdx:l.idx]
+			if inTrie && defaultTrie.output[state] != TokenNone {
+				return Token{
+					Type:   defaultTrie.output[state],
+					Piece:  defaultTrie.piece[state],
+					Lexeme: lexeme,
+					Pos:    pos,
+				}, nil
+			}
+			return Token{
+				Type:   TokenIdent,
+				Piece:  PieceOperand,
+				Lexeme: lexeme,
+				Pos:    pos,
+			}, nil
+		}
+
+		// Числовые литералы (><)
+		if ch >= '0' && ch <= '9' {
+			lexeme, err := l.ReadNumeric()
+			if err != nil {
+				return Token{}, err
+			}
+			return Token{
+				Type:   TokenInt,
+				Piece:  PieceOperand,
+				Lexeme: lexeme,
+				Pos:    pos,
+			}, nil
+		}
+
+		// Строковый литерал (><)
+		if ch == '"' || ch == '\'' {
+			strVal, err := l.ParseStr(ch)
+			if err != nil {
+				return Token{}, err
+			}
+			return Token{
+				Type:   TokenString,
+				Piece:  PieceOperand,
+				Lexeme: strVal,
+				Pos:    pos,
+			}, nil
+		}
+
+		// Операторы (<>), разделители (>|) и комментарии.
+		startIdx := l.idx
+		state := daRoot
+		for !l.EOF() {
+			next, ok := defaultTrie.Step(state, l.PeekCh())
+			if !ok {
+				break
+			}
+			l.EatCh()
+			state = next
+		}
+
+		if state == daRoot || defaultTrie.output[state] == TokenNone {
+			return Token{}, l.ParseError(fmt.Sprintf("unexpected character %q", ch))
+		}
+
+		tt := defaultTrie.output[state]
+		if tt == TokenCommentLine {
+			l.EatComment()
+			continue
+		}
+		if tt == TokenCommentBlock {
+			if err := l.EatMultiComment(); err != nil {
+				return Token{}, err
+			}
+			continue
+		}
+
+		return Token{
+			Type:   tt,
+			Piece:  defaultTrie.piece[state],
+			Lexeme: l.input[startIdx:l.idx],
+			Pos:    pos,
+		}, nil
+	}
+}
+
+// Функция TokenizeAll считывает все токены, включая TokenEOF
+func (l *Lexer) TokenizeAll() ([]Token, error) {
+	var tokens []Token
+	for {
+		tok, err := l.NextToken()
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, tok)
+		if tok.Type == TokenEOF {
+			return tokens, nil
+		}
+	}
+}
+
+// Сопоставляет строку во входных данных, игнорируя предшествующие пробелы
 func (l *Lexer) MatchToken(token string) (bool, error) {
 	if err := l.EatWS(); err != nil {
 		return false, err
@@ -276,9 +364,7 @@ func (l *Lexer) MatchToken(token string) (bool, error) {
 	return true, nil
 }
 
-// Match a keyword in the input, ignoring preceding whitespace
-// It's different from match_token because following identifier
-// chars unacceptable
+// Считываеь ключевое слово во входных данных, игнорируя предшествующие пробелы
 func (l *Lexer) MatchKeyword(keyword string) (bool, error) {
 	if err := l.EatWS(); err != nil {
 		return false, err
@@ -290,7 +376,6 @@ func (l *Lexer) MatchKeyword(keyword string) (bool, error) {
 	endBytePos := l.idx + len(keyword)
 	if endBytePos < len(l.input) {
 		nextRune, _ := utf8.DecodeRuneInString(l.input[endBytePos:])
-		// Can't match as a keyword if the next is identifier chars
 		if IsIdentCh(nextRune) {
 			return false, nil
 		}
@@ -317,7 +402,7 @@ func (l *Lexer) ExpectToken(token string) error {
 	return l.ParseError(fmt.Sprintf("expected token %q", token))
 }
 
-// Parse an integer value
+// Парсит целочисленное число
 func (l *Lexer) ParseInt(radix int) (*big.Int, error) {
 	if l.EOF() || runeToDigit(l.PeekCh(), radix) < 0 {
 		return nil, l.ParseError("expected digit")
@@ -331,7 +416,7 @@ func (l *Lexer) ParseInt(radix int) (*big.Int, error) {
 
 		if ch == '_' {
 			if runeToDigit(l.PeekChAt(1), radix) < 0 {
-				return nil, l.ParseError("only one numeric separator can occur between digits")
+				return nil, l.ParseError("'_' must separate successive digits")
 			}
 			l.EatCh()
 			continue
@@ -350,75 +435,11 @@ func (l *Lexer) ParseInt(radix int) (*big.Int, error) {
 	return intVal, nil
 }
 
-// Read the characters of a numeric value into a string
-func (l *Lexer) ReadNumeric() (string, error) {
-	readDigits := func() (bool, error) {
-		ch := l.PeekCh()
-		if ch < '0' || ch > '9' {
-			return false, nil
-		}
-
-		for {
-			c := l.PeekCh()
-			if c == '_' {
-				next := l.PeekChAt(1)
-				if next < '0' || next > '9' {
-					return false, l.ParseError("only one numeric separator can occur between digits")
-				}
-				l.EatCh()
-				continue
-			}
-
-			if c < '0' || c > '9' {
-				break
-			}
-			l.EatCh()
-		}
-		return true, nil
-	}
-
-	readSign := func() {
-		_ = l.MatchChar('+') || l.MatchChar('-')
-	}
-
-	startByteIdx := l.idx
-
-	readSign()
-
-	if _, err := readDigits(); err != nil {
-		return "", err
-	}
-
-	if l.PeekCh() == '.' && l.PeekChAt(1) == '_' {
-		return "", l.ParseError("only one numeric separator can occur between digits")
-	}
-
-	if l.PeekCh() == '.' && l.PeekChAt(1) >= '0' && l.PeekChAt(1) <= '9' {
-		l.EatCh()
-		if _, err := readDigits(); err != nil {
-			return "", err
-		}
-	}
-
-	if l.MatchChar('e') || l.MatchChar('E') {
-		readSign()
-		hasDigits, err := readDigits()
-		if err != nil {
-			return "", err
-		}
-		if !hasDigits {
-			return "", l.ParseError("expected digits in floating-point exponent")
-		}
-	}
-
-	endByteIdx := l.idx
-	numStr := l.input[startByteIdx:endByteIdx]
-	return strings.ReplaceAll(numStr, "_", ""), nil
-}
-
-// Parse a string literal
+// Парсит строковый литерал
 func (l *Lexer) ParseStr(endCh rune) (string, error) {
-	l.EatCh()
+	if !l.MatchChar(endCh) {
+		return "", l.ParseError(fmt.Sprintf("expected opening quote %q", endCh))
+	}
 
 	var out strings.Builder
 
@@ -449,8 +470,6 @@ func (l *Lexer) ParseStr(endCh rune) (string, error) {
 			case '0':
 				out.WriteRune(0)
 
-			// Hexadecimal escape sequence, limited to ASCII since
-			// strings are UTF-8 and a single byte above 0x7F is invalid
 			case 'x':
 				d0 := runeToDigit(l.EatCh(), 16)
 				d1 := runeToDigit(l.EatCh(), 16)
@@ -463,7 +482,6 @@ func (l *Lexer) ParseStr(endCh rune) (string, error) {
 				}
 				out.WriteByte(byte(byteVal))
 
-			// Unicode escape sequence with 1 to 6 hex digits, e.g. \u1F600
 			case 'u':
 				var codepoint int64
 				numDigits := 0
@@ -501,7 +519,34 @@ func (l *Lexer) ParseStr(endCh rune) (string, error) {
 	return out.String(), nil
 }
 
-// Parse a C-style alphanumeric identifier
+// Парсит целочисленный литерал в системах счисления 2 (0b), 8 (0o), 16 (0x) или 10
+func (l *Lexer) ReadNumeric() (string, error) {
+	radix := 10
+	if l.PeekCh() == '0' {
+		p1 := l.PeekChAt(1)
+		switch p1 {
+		case 'b' | 'B':
+			radix = 2
+		case 'o' | 'O':
+			radix = 8
+		case 'x' | 'X':
+			radix = 16
+		}
+	}
+
+	if radix != 10 {
+		l.EatCh()
+		l.EatCh()
+	}
+
+	val, err := l.ParseInt(radix)
+	if err != nil {
+		return "", err
+	}
+	return val.String(), nil
+}
+
+// Парсит буквенно-цифровой идентификатор
 func (l *Lexer) ParseIdent() (string, error) {
 	if l.EOF() || !IsIdentStart(l.PeekCh()) {
 		return "", l.ParseError("expected identifier")
@@ -519,9 +564,19 @@ func (l *Lexer) ParseIdent() (string, error) {
 }
 
 func runeToDigit(ch rune, radix int) int {
-	d, err := strconv.ParseInt(string(ch), radix, 64)
-	if err != nil {
+	var d int
+	switch {
+	case ch >= '0' && ch <= '9':
+		d = int(ch - '0')
+	case ch >= 'a' && ch <= 'z':
+		d = int(ch-'a') + 10
+	case ch >= 'A' && ch <= 'Z':
+		d = int(ch-'A') + 10
+	default:
 		return -1
 	}
-	return int(d)
+	if d >= radix {
+		return -1
+	}
+	return d
 }
