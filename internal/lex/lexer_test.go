@@ -109,6 +109,35 @@ func TestLexer(t *testing.T) {
 			tok(TokenPercent, "%", 1, 9),
 		}},
 
+		// знаки перед числами
+		{"-5", []Token{
+			tok(TokenMinus, "-", 1, 1),
+			tok(TokenInt, "5", 1, 2),
+		}},
+		{"+5", []Token{
+			tok(TokenPlus, "+", 1, 1),
+			tok(TokenInt, "5", 1, 2),
+		}},
+		{"-42", []Token{
+			tok(TokenMinus, "-", 1, 1),
+			tok(TokenInt, "42", 1, 2),
+		}},
+
+		// сочетание знаков подряд
+		{"+-", []Token{
+			tok(TokenPlus, "+", 1, 1),
+			tok(TokenMinus, "-", 1, 2),
+		}},
+		{"-+", []Token{
+			tok(TokenMinus, "-", 1, 1),
+			tok(TokenPlus, "+", 1, 2),
+		}},
+		{"+-5", []Token{
+			tok(TokenPlus, "+", 1, 1),
+			tok(TokenMinus, "-", 1, 2),
+			tok(TokenInt, "5", 1, 3),
+		}},
+
 		// сравнение
 		{"== != < <= > >=", []Token{
 			tok(TokenEq, "==", 1, 1),
