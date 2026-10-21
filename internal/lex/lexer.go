@@ -525,11 +525,11 @@ func (l *Lexer) ReadNumeric() (string, error) {
 	if l.PeekCh() == '0' {
 		p1 := l.PeekChAt(1)
 		switch p1 {
-		case 'b' | 'B':
+		case 'b', 'B':
 			radix = 2
-		case 'o' | 'O':
+		case 'o', 'O':
 			radix = 8
-		case 'x' | 'X':
+		case 'x', 'X':
 			radix = 16
 		}
 	}
