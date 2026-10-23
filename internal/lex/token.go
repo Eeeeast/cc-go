@@ -27,7 +27,7 @@ const (
 	TokenString
 	TokenBool
 
-	// Пробельные токены автомата
+	// Пробельные токены
 	TokenCommentLine
 	TokenCommentBlock
 

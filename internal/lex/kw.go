@@ -27,7 +27,7 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		ttype TokenType
 		piece PuzzlePiece
 	}{
-		// Ключевые слова — действия и декларации (>>)
+		// Действия и декларации (>>)
 		{"for", TokenKwFor, PieceAction},
 		{"if", TokenKwIf, PieceAction},
 		{"else", TokenKwElse, PieceAction},
@@ -37,7 +37,7 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		{"type", TokenKwType, PieceAction},
 		{"var", TokenKwVar, PieceAction},
 
-		// Ключевые слова — терминаторы (>|) и булевы константы (><)
+		// Терминаторы (>|) и булевы константы (><)
 		{"break", TokenKwBreak, PieceTerminator},
 		{"continue", TokenKwContinue, PieceTerminator},
 		{"true", TokenBool, PieceOperand},
