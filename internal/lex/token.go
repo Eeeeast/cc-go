@@ -44,10 +44,9 @@ func (t TokenType) Piece() PuzzlePiece {
 
 	case TokenNone, TokenCommentBlock, TokenCommentLine:
 		return PieceNone
-
-	default:
-		panic(fmt.Sprintf("unexpected lex.TokenType: %#v", t))
 	}
+
+	panic(fmt.Sprintf("unexpected lex.TokenType: %#v", t))
 }
 
 type TokenType int
