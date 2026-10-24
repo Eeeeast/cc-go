@@ -1,5 +1,7 @@
 package lex
 
+import "fmt"
+
 // PuzzlePiece определяет пазловую модель токенизации (jigsaw puzzle):
 // - "><" (PieceOperand):    идентификаторы и литералы (операнды)
 // - ">>" (PieceAction):     ключовые глаголы, деклараци и унарные модификаторы
@@ -14,6 +16,39 @@ const (
 	PieceConnector  PuzzlePiece = "<>"
 	PieceTerminator PuzzlePiece = ">|"
 )
+
+func (t TokenType) Piece() PuzzlePiece {
+	switch t {
+	// ><
+	case TokenBool, TokenInt, TokenIdent, TokenString:
+		return PieceOperand
+
+	// >>
+	case TokenKwFor, TokenKwIf, TokenKwElse, TokenKwFunc,
+		TokenKwStruct, TokenKwReturn, TokenKwType, TokenKwVar,
+		TokenNot:
+		return PieceAction
+
+	// <>
+	case TokenPlus, TokenMinus, TokenStar, TokenSlash, TokenPercent,
+		TokenAssign, TokenColonEq, TokenEq, TokenNotEq,
+		TokenLt, TokenLtEq, TokenGt, TokenGtEq,
+		TokenAnd, TokenOr, TokenDot, TokenComma:
+		return PieceConnector
+
+	// >|
+	case TokenEOF, TokenKwBreak, TokenKwContinue,
+		TokenSemicolon, TokenLParen, TokenRParen,
+		TokenLBrace, TokenRBrace, TokenLBracket, TokenRBracket:
+		return PieceTerminator
+
+	case TokenNone, TokenCommentBlock, TokenCommentLine:
+		return PieceNone
+
+	default:
+		panic(fmt.Sprintf("unexpected lex.TokenType: %#v", t))
+	}
+}
 
 type TokenType int
 
@@ -75,7 +110,6 @@ const (
 
 type Token struct {
 	Type   TokenType
-	Piece  PuzzlePiece
 	Lexeme string
 	Pos    SrcPos
 }

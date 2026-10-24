@@ -221,7 +221,6 @@ func (l *Lexer) NextToken() (Token, error) {
 		if l.EOF() {
 			return Token{
 				Type:   TokenEOF,
-				Piece:  PieceTerminator,
 				Lexeme: "",
 				Pos:    pos,
 			}, nil
@@ -250,14 +249,12 @@ func (l *Lexer) NextToken() (Token, error) {
 			if inTrie && defaultTrie.output[state] != TokenNone {
 				return Token{
 					Type:   defaultTrie.output[state],
-					Piece:  defaultTrie.piece[state],
 					Lexeme: lexeme,
 					Pos:    pos,
 				}, nil
 			}
 			return Token{
 				Type:   TokenIdent,
-				Piece:  PieceOperand,
 				Lexeme: lexeme,
 				Pos:    pos,
 			}, nil
@@ -271,7 +268,6 @@ func (l *Lexer) NextToken() (Token, error) {
 			}
 			return Token{
 				Type:   TokenInt,
-				Piece:  PieceOperand,
 				Lexeme: lexeme,
 				Pos:    pos,
 			}, nil
@@ -285,7 +281,6 @@ func (l *Lexer) NextToken() (Token, error) {
 			}
 			return Token{
 				Type:   TokenString,
-				Piece:  PieceOperand,
 				Lexeme: strVal,
 				Pos:    pos,
 			}, nil
@@ -321,7 +316,6 @@ func (l *Lexer) NextToken() (Token, error) {
 
 		return Token{
 			Type:   tt,
-			Piece:  defaultTrie.piece[state],
 			Lexeme: l.input[startIdx:l.idx],
 			Pos:    pos,
 		}, nil

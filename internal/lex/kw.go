@@ -10,13 +10,11 @@ type DoubleArrayTrie struct {
 	base   []int
 	check  []int
 	output []TokenType
-	piece  []PuzzlePiece
 }
 
 type trieNode struct {
 	children map[int]*trieNode
 	ttype    TokenType
-	piece    PuzzlePiece
 }
 
 var defaultTrie = buildLanguageTrie()
@@ -25,52 +23,53 @@ func buildLanguageTrie() *DoubleArrayTrie {
 	entries := []struct {
 		text  string
 		ttype TokenType
-		piece PuzzlePiece
 	}{
-		// Действия и декларации (>>)
-		{"for", TokenKwFor, PieceAction},
-		{"if", TokenKwIf, PieceAction},
-		{"else", TokenKwElse, PieceAction},
-		{"func", TokenKwFunc, PieceAction},
-		{"struct", TokenKwStruct, PieceAction},
-		{"return", TokenKwReturn, PieceAction},
-		{"type", TokenKwType, PieceAction},
-		{"var", TokenKwVar, PieceAction},
+		// Действия и декларации
+		{"for", TokenKwFor},
+		{"if", TokenKwIf},
+		{"else", TokenKwElse},
+		{"func", TokenKwFunc},
+		{"struct", TokenKwStruct},
+		{"return", TokenKwReturn},
+		{"type", TokenKwType},
+		{"var", TokenKwVar},
 
-		// Терминаторы (>|) и булевы константы (><)
-		{"break", TokenKwBreak, PieceTerminator},
-		{"continue", TokenKwContinue, PieceTerminator},
-		{"true", TokenBool, PieceOperand},
-		{"false", TokenBool, PieceOperand},
+		// Оператор
+		{"!", TokenNot},
 
-		// Операторы и связки (<> и >>)
-		{"+", TokenPlus, PieceConnector},
-		{"-", TokenMinus, PieceConnector},
-		{"*", TokenStar, PieceConnector},
-		{"/", TokenSlash, PieceConnector},
-		{"%", TokenPercent, PieceConnector},
-		{"=", TokenAssign, PieceConnector},
-		{":=", TokenColonEq, PieceConnector},
-		{"==", TokenEq, PieceConnector},
-		{"!=", TokenNotEq, PieceConnector},
-		{"<", TokenLt, PieceConnector},
-		{"<=", TokenLtEq, PieceConnector},
-		{">", TokenGt, PieceConnector},
-		{">=", TokenGtEq, PieceConnector},
-		{"&&", TokenAnd, PieceConnector},
-		{"||", TokenOr, PieceConnector},
-		{"!", TokenNot, PieceAction},
-		{".", TokenDot, PieceConnector},
-		{",", TokenComma, PieceConnector},
+		// Булевы константы
+		{"true", TokenBool},
+		{"false", TokenBool},
 
-		// Разделители (>|)
-		{";", TokenSemicolon, PieceTerminator},
-		{"(", TokenLParen, PieceTerminator},
-		{")", TokenRParen, PieceTerminator},
-		{"{", TokenLBrace, PieceTerminator},
-		{"}", TokenRBrace, PieceTerminator},
-		{"[", TokenLBracket, PieceTerminator},
-		{"]", TokenRBracket, PieceTerminator},
+		// Cвязки
+		{"+", TokenPlus},
+		{"-", TokenMinus},
+		{"*", TokenStar},
+		{"/", TokenSlash},
+		{"%", TokenPercent},
+		{"=", TokenAssign},
+		{":=", TokenColonEq},
+		{"==", TokenEq},
+		{"!=", TokenNotEq},
+		{"<", TokenLt},
+		{"<=", TokenLtEq},
+		{">", TokenGt},
+		{">=", TokenGtEq},
+		{"&&", TokenAnd},
+		{"||", TokenOr},
+		{".", TokenDot},
+		{",", TokenComma},
+
+		// Терминаторы и разделители
+		{"break", TokenKwBreak},
+		{"continue", TokenKwContinue},
+		{";", TokenSemicolon},
+		{"(", TokenLParen},
+		{")", TokenRParen},
+		{"{", TokenLBrace},
+		{"}", TokenRBrace},
+		{"[", TokenLBracket},
+		{"]", TokenRBracket},
 	}
 
 	root := &trieNode{children: make(map[int]*trieNode)}
@@ -83,14 +82,13 @@ func buildLanguageTrie() *DoubleArrayTrie {
 			}
 			curr = curr.children[c]
 		}
-		curr.ttype, curr.piece = e.ttype, e.piece
+		curr.ttype = e.ttype
 	}
 
 	da := &DoubleArrayTrie{
 		base:   make([]int, 154),
 		check:  make([]int, 154),
 		output: make([]TokenType, 154),
-		piece:  make([]PuzzlePiece, 154),
 	}
 	da.check[daRoot] = -1
 
@@ -123,7 +121,7 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		da.base[state] = b
 		for _, k := range keys {
 			next, child := b+k, node.children[k]
-			da.check[next], da.output[next], da.piece[next] = state, child.ttype, child.piece
+			da.check[next], da.output[next] = state, child.ttype
 		}
 		for _, k := range keys {
 			build(b+k, node.children[k])
