@@ -17,25 +17,9 @@ func (c *testCase) name() string {
 	return c.source
 }
 
-func pieceFor(t TokenType) PuzzlePiece {
-	switch t {
-	case TokenIdent, TokenInt, TokenString, TokenBool:
-		return PieceOperand
-	case TokenKwFor, TokenKwIf, TokenKwElse, TokenKwFunc, TokenKwStruct,
-		TokenKwReturn, TokenKwType, TokenKwVar, TokenNot:
-		return PieceAction
-	case TokenKwBreak, TokenKwContinue, TokenSemicolon,
-		TokenLParen, TokenRParen, TokenLBrace, TokenRBrace,
-		TokenLBracket, TokenRBracket:
-		return PieceTerminator
-	}
-	return PieceConnector
-}
-
 func tok(t TokenType, lex string, line, col int) Token {
 	return Token{
 		Type:   t,
-		Piece:  pieceFor(t),
 		Lexeme: lex,
 		Pos:    SrcPos{LineNo: line, ColNo: col},
 	}
@@ -409,7 +393,7 @@ func TestEndOfFileToken(t *testing.T) {
 		tok, err := lx.NextToken()
 		require.NoError(t, err)
 		require.Equal(t, TokenEOF, tok.Type)
-		require.Equal(t, PieceTerminator, tok.Piece)
+		require.Equal(t, PieceTerminator, tok.Type.Piece())
 		require.Equal(t, "", tok.Lexeme)
 		require.Equal(t, 1, tok.Pos.LineNo)
 		require.Equal(t, 1, tok.Pos.ColNo)
@@ -431,4 +415,68 @@ func TestTokenizeAll(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tokens, 4)
 	require.Equal(t, TokenEOF, tokens[3].Type)
+}
+
+func TestPiecePanic(t *testing.T) {
+	require.Panics(t, func() {
+		_ = TokenType(-1).Piece()
+	})
+}
+
+func TestPiece(t *testing.T) {
+	cases := []struct {
+		t    TokenType
+		want PuzzlePiece
+	}{
+		{TokenIdent, PieceOperand},
+		{TokenInt, PieceOperand},
+		{TokenString, PieceOperand},
+		{TokenBool, PieceOperand},
+
+		{TokenKwFor, PieceAction},
+		{TokenKwIf, PieceAction},
+		{TokenKwElse, PieceAction},
+		{TokenKwFunc, PieceAction},
+		{TokenKwStruct, PieceAction},
+		{TokenKwReturn, PieceAction},
+		{TokenKwType, PieceAction},
+		{TokenKwVar, PieceAction},
+		{TokenNot, PieceAction},
+
+		{TokenPlus, PieceConnector},
+		{TokenMinus, PieceConnector},
+		{TokenStar, PieceConnector},
+		{TokenSlash, PieceConnector},
+		{TokenPercent, PieceConnector},
+		{TokenAssign, PieceConnector},
+		{TokenColonEq, PieceConnector},
+		{TokenEq, PieceConnector},
+		{TokenNotEq, PieceConnector},
+		{TokenLt, PieceConnector},
+		{TokenLtEq, PieceConnector},
+		{TokenGt, PieceConnector},
+		{TokenGtEq, PieceConnector},
+		{TokenAnd, PieceConnector},
+		{TokenOr, PieceConnector},
+		{TokenDot, PieceConnector},
+		{TokenComma, PieceConnector},
+
+		{TokenEOF, PieceTerminator},
+		{TokenKwBreak, PieceTerminator},
+		{TokenKwContinue, PieceTerminator},
+		{TokenSemicolon, PieceTerminator},
+		{TokenLParen, PieceTerminator},
+		{TokenRParen, PieceTerminator},
+		{TokenLBrace, PieceTerminator},
+		{TokenRBrace, PieceTerminator},
+		{TokenLBracket, PieceTerminator},
+		{TokenRBracket, PieceTerminator},
+
+		{TokenNone, PieceNone},
+		{TokenCommentLine, PieceNone},
+		{TokenCommentBlock, PieceNone},
+	}
+	for _, c := range cases {
+		require.Equal(t, c.want, c.t.Piece(), "TokenType %d", int(c.t))
+	}
 }
