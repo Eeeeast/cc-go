@@ -46,7 +46,7 @@ MiniGo — минималистичный язык с синтаксисом, п
 
 ```
 break   continue  for    if    else
-func    struct    int    bool  string
+func    struct    
 return  true      false  type  var
 ```
 
