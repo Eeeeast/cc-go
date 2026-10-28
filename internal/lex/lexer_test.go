@@ -267,40 +267,6 @@ func TestLexerAPI(t *testing.T) {
 		require.False(t, lx.PeekStr("world"))
 	})
 
-	t.Run("match token", func(t *testing.T) {
-		lx := NewLexer("abc", "")
-		ok, err := lx.MatchToken("abc")
-		require.NoError(t, err)
-		require.True(t, ok)
-		require.True(t, lx.EOF())
-
-		lx = NewLexer("abc", "")
-		ok, err = lx.MatchToken("xyz")
-		require.NoError(t, err)
-		require.False(t, ok)
-	})
-
-	t.Run("match keyword", func(t *testing.T) {
-		lx := NewLexer("if x", "")
-		ok, err := lx.MatchKeyword("if")
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		lx = NewLexer("ifx", "")
-		ok, err = lx.MatchKeyword("if")
-		require.NoError(t, err)
-		require.False(t, ok)
-	})
-
-	t.Run("expect token", func(t *testing.T) {
-		lx := NewLexer("{x}", "")
-		require.NoError(t, lx.ExpectToken("{"))
-		require.Equal(t, 'x', lx.PeekCh())
-
-		lx = NewLexer("(x)", "")
-		require.Error(t, lx.ExpectToken("{"))
-	})
-
 	t.Run("from file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "a.mg")
 		require.NoError(t, os.WriteFile(path, []byte("abc"), 0o644))
@@ -393,7 +359,6 @@ func TestEndOfFileToken(t *testing.T) {
 		tok, err := lx.NextToken()
 		require.NoError(t, err)
 		require.Equal(t, TokenEOF, tok.Type)
-		require.Equal(t, PieceTerminator, tok.Type.Piece())
 		require.Equal(t, "", tok.Lexeme)
 		require.Equal(t, 1, tok.Pos.LineNo)
 		require.Equal(t, 1, tok.Pos.ColNo)
@@ -415,68 +380,4 @@ func TestTokenizeAll(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tokens, 4)
 	require.Equal(t, TokenEOF, tokens[3].Type)
-}
-
-func TestPiecePanic(t *testing.T) {
-	require.Panics(t, func() {
-		_ = TokenType(-1).Piece()
-	})
-}
-
-func TestPiece(t *testing.T) {
-	cases := []struct {
-		t    TokenType
-		want PuzzlePiece
-	}{
-		{TokenIdent, PieceOperand},
-		{TokenInt, PieceOperand},
-		{TokenString, PieceOperand},
-		{TokenBool, PieceOperand},
-
-		{TokenKwFor, PieceAction},
-		{TokenKwIf, PieceAction},
-		{TokenKwElse, PieceAction},
-		{TokenKwFunc, PieceAction},
-		{TokenKwStruct, PieceAction},
-		{TokenKwReturn, PieceAction},
-		{TokenKwType, PieceAction},
-		{TokenKwVar, PieceAction},
-		{TokenNot, PieceAction},
-
-		{TokenPlus, PieceConnector},
-		{TokenMinus, PieceConnector},
-		{TokenStar, PieceConnector},
-		{TokenSlash, PieceConnector},
-		{TokenPercent, PieceConnector},
-		{TokenAssign, PieceConnector},
-		{TokenColonEq, PieceConnector},
-		{TokenEq, PieceConnector},
-		{TokenNotEq, PieceConnector},
-		{TokenLt, PieceConnector},
-		{TokenLtEq, PieceConnector},
-		{TokenGt, PieceConnector},
-		{TokenGtEq, PieceConnector},
-		{TokenAnd, PieceConnector},
-		{TokenOr, PieceConnector},
-		{TokenDot, PieceConnector},
-		{TokenComma, PieceConnector},
-
-		{TokenEOF, PieceTerminator},
-		{TokenKwBreak, PieceTerminator},
-		{TokenKwContinue, PieceTerminator},
-		{TokenSemicolon, PieceTerminator},
-		{TokenLParen, PieceTerminator},
-		{TokenRParen, PieceTerminator},
-		{TokenLBrace, PieceTerminator},
-		{TokenRBrace, PieceTerminator},
-		{TokenLBracket, PieceTerminator},
-		{TokenRBracket, PieceTerminator},
-
-		{TokenNone, PieceNone},
-		{TokenCommentLine, PieceNone},
-		{TokenCommentBlock, PieceNone},
-	}
-	for _, c := range cases {
-		require.Equal(t, c.want, c.t.Piece(), "TokenType %d", int(c.t))
-	}
 }

@@ -17,11 +17,11 @@ type ParseError struct {
 func (e *ParseError) Error() string {
 	if e.Pos.LineNo == 0 {
 		return fmt.Sprintf("%s: %s", e.Pos.SrcName, e.Msg)
-	} else if e.Pos.ColNo == 0 {
-		return fmt.Sprintf("%s:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Msg)
-	} else {
-		return fmt.Sprintf("%s:%d:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Pos.ColNo, e.Msg)
 	}
+	if e.Pos.ColNo == 0 {
+		return fmt.Sprintf("%s:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Msg)
+	}
+	return fmt.Sprintf("%s:%d:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Pos.ColNo, e.Msg)
 }
 
 func NewParseError(l *Lexer, msg string) *ParseError {
@@ -81,11 +81,7 @@ func (l *Lexer) EOF() bool {
 }
 
 func (l *Lexer) PeekCh() rune {
-	if l.idx >= len(l.input) {
-		return 0
-	}
-	r, _ := utf8.DecodeRuneInString(l.input[l.idx:])
-	return r
+	return l.PeekChAt(0)
 }
 
 func (l *Lexer) PeekChAt(charOffset int) rune {
@@ -105,7 +101,7 @@ func (l *Lexer) PeekChAt(charOffset int) rune {
 }
 
 func (l *Lexer) EatCh() rune {
-	if l.idx >= len(l.input) {
+	if l.EOF() {
 		return 0
 	}
 	ch, width := utf8.DecodeRuneInString(l.input[l.idx:])
@@ -158,26 +154,20 @@ func (l *Lexer) PeekStr(s string) bool {
 }
 
 func (l *Lexer) EatComment() {
-	for !l.EOF() {
-		if l.EatCh() == '\n' {
-			break
-		}
+	for !l.EOF() && l.EatCh() != '\n' {
 	}
 }
 
 func (l *Lexer) EatMultiComment() error {
-	depth := 1
-	for {
-		if l.EOF() {
+	for depth := 1; depth > 0; {
+		switch {
+		case l.EOF():
 			return l.ParseError("unexpected end of input inside multi-line comment")
-		} else if l.MatchChars([]rune{'/', '*'}) {
+		case l.MatchChars([]rune{'/', '*'}):
 			depth++
-		} else if l.MatchChars([]rune{'*', '/'}) {
+		case l.MatchChars([]rune{'*', '/'}):
 			depth--
-			if depth == 0 {
-				break
-			}
-		} else {
+		default:
 			l.EatCh()
 		}
 	}
@@ -186,140 +176,68 @@ func (l *Lexer) EatMultiComment() error {
 
 func (l *Lexer) EatWS() error {
 	for !l.EOF() {
-		ch := l.PeekCh()
-
-		if ch == '/' {
-			if l.MatchChars([]rune{'/', '/'}) {
-				l.EatComment()
-				continue
+		switch {
+		case l.MatchChars([]rune{'/', '/'}):
+			l.EatComment()
+		case l.MatchChars([]rune{'/', '*'}):
+			if err := l.EatMultiComment(); err != nil {
+				return err
 			}
-			if l.MatchChars([]rune{'/', '*'}) {
-				if err := l.EatMultiComment(); err != nil {
-					return err
-				}
-				continue
-			}
-		}
-
-		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\x0c' {
+		case strings.ContainsRune(" \t\n\r\x0c", l.PeekCh()):
 			l.EatCh()
-			continue
+		default:
+			return nil
 		}
-
-		break
 	}
 	return nil
 }
 
 func (l *Lexer) NextToken() (Token, error) {
-	for {
-		if err := l.EatWS(); err != nil {
-			return Token{}, err
-		}
-
-		pos := l.GetPos()
-		if l.EOF() {
-			return Token{
-				Type:   TokenEOF,
-				Lexeme: "",
-				Pos:    pos,
-			}, nil
-		}
-
-		ch := l.PeekCh()
-
-		// Ключевые слова (>>, >|), логические литералы (><) и идентификаторы (><)
-		if IsIdentStart(ch) {
-			startIdx := l.idx
-			state := daRoot
-			inTrie := true
-
-			for !l.EOF() && IsIdentCh(l.PeekCh()) {
-				r := l.EatCh()
-				if inTrie {
-					if next, ok := defaultTrie.Step(state, r); ok {
-						state = next
-					} else {
-						inTrie = false
-					}
-				}
-			}
-
-			lexeme := l.input[startIdx:l.idx]
-			if inTrie && defaultTrie.output[state] != TokenNone {
-				return Token{
-					Type:   defaultTrie.output[state],
-					Lexeme: lexeme,
-					Pos:    pos,
-				}, nil
-			}
-			return Token{
-				Type:   TokenIdent,
-				Lexeme: lexeme,
-				Pos:    pos,
-			}, nil
-		}
-
-		// Числовые литералы (><)
-		if ch >= '0' && ch <= '9' {
-			lexeme, err := l.ReadNumeric()
-			if err != nil {
-				return Token{}, err
-			}
-			return Token{
-				Type:   TokenInt,
-				Lexeme: lexeme,
-				Pos:    pos,
-			}, nil
-		}
-
-		// Строковый литерал (><)
-		if ch == '"' || ch == '\'' {
-			strVal, err := l.ParseStr(ch)
-			if err != nil {
-				return Token{}, err
-			}
-			return Token{
-				Type:   TokenString,
-				Lexeme: strVal,
-				Pos:    pos,
-			}, nil
-		}
-
-		// Операторы (<>), разделители (>|) и комментарии.
-		startIdx := l.idx
-		state := daRoot
-		for !l.EOF() {
-			next, ok := defaultTrie.Step(state, l.PeekCh())
-			if !ok {
-				break
-			}
-			l.EatCh()
-			state = next
-		}
-
-		if state == daRoot || defaultTrie.output[state] == TokenNone {
-			return Token{}, l.ParseError(fmt.Sprintf("unexpected character %q", ch))
-		}
-
-		tt := defaultTrie.output[state]
-		if tt == TokenCommentLine {
-			l.EatComment()
-			continue
-		}
-		if tt == TokenCommentBlock {
-			if err := l.EatMultiComment(); err != nil {
-				return Token{}, err
-			}
-			continue
-		}
-
-		return Token{
-			Type:   tt,
-			Lexeme: l.input[startIdx:l.idx],
-			Pos:    pos,
-		}, nil
+	if err := l.EatWS(); err != nil {
+		return Token{}, err
 	}
+	pos := l.GetPos()
+	if l.EOF() {
+		return Token{Type: TokenEOF, Pos: pos}, nil
+	}
+
+	startIdx := l.idx
+	ch := l.PeekCh()
+
+	state := daRoot
+	for !l.EOF() {
+		next, ok := defaultTrie.Step(state, l.PeekCh())
+		if !ok {
+			break
+		}
+		l.EatCh()
+		state = next
+	}
+
+	if IsIdentStart(ch) {
+		if (!l.EOF() && IsIdentCh(l.PeekCh())) || defaultTrie.output[state] == TokenNone {
+			for !l.EOF() && IsIdentCh(l.PeekCh()) {
+				l.EatCh()
+			}
+			return Token{Type: TokenIdent, Lexeme: l.input[startIdx:l.idx], Pos: pos}, nil
+		}
+		return Token{Type: defaultTrie.output[state], Lexeme: l.input[startIdx:l.idx], Pos: pos}, nil
+	}
+
+	if tt := defaultTrie.output[state]; tt != TokenNone {
+		return Token{Type: tt, Lexeme: l.input[startIdx:l.idx], Pos: pos}, nil
+	}
+
+	if ch >= '0' && ch <= '9' {
+		lexeme, err := l.ReadNumeric()
+		return Token{Type: TokenInt, Lexeme: lexeme, Pos: pos}, err
+	}
+	if ch == '"' || ch == '\'' {
+		strVal, err := l.ParseStr(ch)
+		return Token{Type: TokenString, Lexeme: strVal, Pos: pos}, err
+	}
+
+	return Token{}, l.ParseError(fmt.Sprintf("unexpected character %q", ch))
 }
 
 // Функция TokenizeAll считывает все токены, включая TokenEOF
@@ -337,66 +255,16 @@ func (l *Lexer) TokenizeAll() ([]Token, error) {
 	}
 }
 
-// Сопоставляет строку во входных данных, игнорируя предшествующие пробелы
-func (l *Lexer) MatchToken(token string) (bool, error) {
-	if err := l.EatWS(); err != nil {
-		return false, err
-	}
-	if !l.PeekStr(token) {
-		return false, nil
-	}
-	for range token {
-		l.EatCh()
-	}
-	return true, nil
-}
-
-// Считываеь ключевое слово во входных данных, игнорируя предшествующие пробелы
-func (l *Lexer) MatchKeyword(keyword string) (bool, error) {
-	if err := l.EatWS(); err != nil {
-		return false, err
-	}
-	if !l.PeekStr(keyword) {
-		return false, nil
-	}
-
-	endBytePos := l.idx + len(keyword)
-	if endBytePos < len(l.input) {
-		nextRune, _ := utf8.DecodeRuneInString(l.input[endBytePos:])
-		if IsIdentCh(nextRune) {
-			return false, nil
-		}
-	}
-
-	for range keyword {
-		l.EatCh()
-	}
-	return true, nil
-}
-
 func (l *Lexer) ParseError(msg string) error {
 	return NewParseError(l, msg)
 }
 
-func (l *Lexer) ExpectToken(token string) error {
-	matched, err := l.MatchToken(token)
-	if err != nil {
-		return err
-	}
-	if matched {
-		return nil
-	}
-	return l.ParseError(fmt.Sprintf("expected token %q", token))
-}
-
-// Парсит целочисленное число
 func (l *Lexer) ParseInt(radix int) (*big.Int, error) {
 	if l.EOF() || runeToDigit(l.PeekCh(), radix) < 0 {
 		return nil, l.ParseError("expected digit")
 	}
 
-	intVal := new(big.Int)
-	radixBig := big.NewInt(int64(radix))
+	intVal, radixBig := new(big.Int), big.NewInt(int64(radix))
 
 	for !l.EOF() {
 		ch := l.PeekCh()
@@ -422,7 +290,6 @@ func (l *Lexer) ParseInt(radix int) (*big.Int, error) {
 	return intVal, nil
 }
 
-// Парсит строковый литерал
 func (l *Lexer) ParseStr(endCh rune) (string, error) {
 	if !l.MatchChar(endCh) {
 		return "", l.ParseError(fmt.Sprintf("expected opening quote %q", endCh))
@@ -458,8 +325,7 @@ func (l *Lexer) ParseStr(endCh rune) (string, error) {
 				out.WriteRune(0)
 
 			case 'x':
-				d0 := runeToDigit(l.EatCh(), 16)
-				d1 := runeToDigit(l.EatCh(), 16)
+				d0, d1 := runeToDigit(l.EatCh(), 16), runeToDigit(l.EatCh(), 16)
 				if d0 < 0 || d1 < 0 {
 					return "", l.ParseError("invalid hexadecimal escape sequence")
 				}
@@ -519,11 +385,11 @@ func (l *Lexer) ReadNumeric() (string, error) {
 		case 'x', 'X':
 			radix = 16
 		}
-	}
 
-	if radix != 10 {
-		l.EatCh()
-		l.EatCh()
+		if radix != 10 {
+			l.EatCh()
+			l.EatCh()
+		}
 	}
 
 	val, err := l.ParseInt(radix)
@@ -533,17 +399,13 @@ func (l *Lexer) ReadNumeric() (string, error) {
 	return val.String(), nil
 }
 
-// Парсит буквенно-цифровой идентификатор
 func (l *Lexer) ParseIdent() (string, error) {
 	if l.EOF() || !IsIdentStart(l.PeekCh()) {
 		return "", l.ParseError("expected identifier")
 	}
 
 	startByteIdx := l.idx
-	for !l.EOF() {
-		if !IsIdentCh(l.PeekCh()) {
-			break
-		}
+	for !l.EOF() && IsIdentCh(l.PeekCh()) {
 		l.EatCh()
 	}
 
@@ -551,7 +413,7 @@ func (l *Lexer) ParseIdent() (string, error) {
 }
 
 func runeToDigit(ch rune, radix int) int {
-	var d int
+	d := -1
 	switch {
 	case ch >= '0' && ch <= '9':
 		d = int(ch - '0')
@@ -559,8 +421,6 @@ func runeToDigit(ch rune, radix int) int {
 		d = int(ch-'a') + 10
 	case ch >= 'A' && ch <= 'Z':
 		d = int(ch-'A') + 10
-	default:
-		return -1
 	}
 	if d >= radix {
 		return -1
