@@ -57,6 +57,11 @@ func TestLexer(t *testing.T) {
 			tok(TokenKwFalse, "false", 1, 6),
 		}},
 
+		// регистр ключевых слов важен
+		{"IF", []Token{tok(TokenIdent, "IF", 1, 1)}},
+		{"True", []Token{tok(TokenIdent, "True", 1, 1)}},
+		{"Return", []Token{tok(TokenIdent, "Return", 1, 1)}},
+
 		// идентификаторы
 		{"name", []Token{tok(TokenIdent, "name", 1, 1)}},
 		{"foo_bar", []Token{tok(TokenIdent, "foo_bar", 1, 1)}},
@@ -64,6 +69,7 @@ func TestLexer(t *testing.T) {
 		{"x1", []Token{tok(TokenIdent, "x1", 1, 1)}},
 		{"ifx", []Token{tok(TokenIdent, "ifx", 1, 1)}},
 		{"int", []Token{tok(TokenIdent, "int", 1, 1)}},
+		{"breakfast", []Token{tok(TokenIdent, "breakfast", 1, 1)}},
 
 		// целочисленные литералы
 		{"0 42 1000000", []Token{
@@ -71,18 +77,19 @@ func TestLexer(t *testing.T) {
 			tok(TokenInt, "42", 1, 3),
 			tok(TokenInt, "1000000", 1, 6),
 		}},
-		{"0b1010", []Token{tok(TokenInt, "10", 1, 1)}},
-		{"0B1010", []Token{tok(TokenInt, "10", 1, 1)}},
-		{"0o17", []Token{tok(TokenInt, "15", 1, 1)}},
-		{"0O17", []Token{tok(TokenInt, "15", 1, 1)}},
-		{"0xFF", []Token{tok(TokenInt, "255", 1, 1)}},
-		{"1_000", []Token{tok(TokenInt, "1000", 1, 1)}},
 
-		// строковые литералы
-		{`"hello"`, []Token{tok(TokenString, "hello", 1, 1)}},
-		{`""`, []Token{tok(TokenString, "", 1, 1)}},
-		{`"a\nb"`, []Token{tok(TokenString, "a\nb", 1, 1)}},
-		{`'hi'`, []Token{tok(TokenString, "hi", 1, 1)}},
+		// строковые литералы, Lexeme содержит исходный текст
+		{`"hello"`, []Token{tok(TokenString, `"hello"`, 1, 1)}},
+		{`""`, []Token{tok(TokenString, `""`, 1, 1)}},
+		{`"a\nb"`, []Token{tok(TokenString, `"a\nb"`, 1, 1)}},
+		{`"a\tb"`, []Token{tok(TokenString, `"a\tb"`, 1, 1)}},
+		{`"a\"b"`, []Token{tok(TokenString, `"a\"b"`, 1, 1)}},
+		{`"a\\b"`, []Token{tok(TokenString, `"a\\b"`, 1, 1)}},
+		{`"я"`, []Token{tok(TokenString, `"я"`, 1, 1)}},
+		{`"я" x`, []Token{
+			tok(TokenString, `"я"`, 1, 1),
+			tok(TokenIdent, "x", 1, 5),
+		}},
 
 		// арифметика
 		{"+ - * / %", []Token{
@@ -159,7 +166,7 @@ func TestLexer(t *testing.T) {
 		// комментарии
 		{"// comment\nx", []Token{tok(TokenIdent, "x", 2, 1)}},
 		{"/* comment */ x", []Token{tok(TokenIdent, "x", 1, 15)}},
-		{"/* a /* b */ c */ x", []Token{tok(TokenIdent, "x", 1, 19)}},
+		{"/* a */ /* b */ x", []Token{tok(TokenIdent, "x", 1, 17)}},
 
 		// разбиение двойных символов
 		{"++", []Token{tok(TokenPlus, "+", 1, 1), tok(TokenPlus, "+", 1, 2)}},
@@ -221,6 +228,32 @@ func TestLexer(t *testing.T) {
 	}
 }
 
+func TestLexerErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{"решётка", "#"},
+		{"одиночный амперсанд", "&"},
+		{"одиночная черта", "|"},
+		{"одиночное двоеточие", ":"},
+		{"одинарные кавычки", "'hi'"},
+		{"незакрытый блочный комментарий", "/* never"},
+		{"незакрытая строка", `"abc`},
+		{"неизвестный escape", `"a\qb"`},
+		{"escape hex", `"a\x41"`},
+		{"escape unicode", `"a\u0041"`},
+		{"перенос строки в строке", "\"a\nb\""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lx := NewLexer(c.source, "")
+			_, err := lx.TokenizeAll()
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestLexerAPI(t *testing.T) {
 	t.Run("error format", func(t *testing.T) {
 		cases := []struct {
@@ -230,16 +263,12 @@ func TestLexerAPI(t *testing.T) {
 			{SrcPos{"m", 0, 0}, "m: boom"},
 			{SrcPos{"m", 3, 0}, "m:3: boom"},
 			{SrcPos{"m", 3, 7}, "m:3:7: boom"},
+			{SrcPos{"", 0, 0}, "boom"},
 		}
 		for _, c := range cases {
-			require.Equal(t, c.want, (&ParseError{Pos: c.pos, Msg: "boom"}).Error())
+			require.Equal(t, c.want, NewParseError(c.pos, "boom").Error())
 		}
 	})
-
-	// t.Run("new parse error", func(t *testing.T) {
-	// 	err := NewParseError(NewLexer("abc", "f"), "boom")
-	// 	require.Equal(t, "f:1:1: boom", err.Error())
-	// })
 
 	t.Run("from file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "a.mg")
@@ -253,42 +282,23 @@ func TestLexerAPI(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("read str errors", func(t *testing.T) {
-		for _, src := range []string{`"abc`, `"a\qb"`, `"\xZZ"`, `"\x80"`, `"\uZZ"`, `"\uD800"`, `"\u110000"`} {
-			lx := NewLexer(src, "")
-			_, err := lx.ReadString()
-			require.Error(t, err, src)
-		}
+	t.Run("read string", func(t *testing.T) {
+		lx := NewLexer(`"hello"`, "")
+		got, err := lx.ReadString()
+		require.NoError(t, err)
+		require.Equal(t, `"hello"`, got)
 	})
 
-	t.Run("read int", func(t *testing.T) {
-		lx := NewLexer("1010", "")
+	t.Run("read numeric", func(t *testing.T) {
+		lx := NewLexer("123abc", "")
 		got, err := lx.ReadNumeric()
 		require.NoError(t, err)
-		require.Equal(t, "10", got)
+		require.Equal(t, "123", got)
 
 		lx = NewLexer("abc", "")
-		_, err = lx.ReadNumeric()
-		require.Error(t, err)
-	})
-
-	t.Run("read numeric errors", func(t *testing.T) {
-		for _, src := range []string{"1_", "1__0", "0x"} {
-			lx := NewLexer(src, "")
-			_, err := lx.ReadNumeric()
-			require.Error(t, err, src)
-		}
-	})
-
-	t.Run("eat ws error", func(t *testing.T) {
-		lx := NewLexer("/* never", "")
-		require.Error(t, lx.EatWS())
-	})
-
-	t.Run("tokenize error", func(t *testing.T) {
-		lx := NewLexer("#", "")
-		_, err := lx.TokenizeAll()
-		require.Error(t, err)
+		got, err = lx.ReadNumeric()
+		require.NoError(t, err)
+		require.Equal(t, "", got)
 	})
 
 	t.Run("match char fail", func(t *testing.T) {
@@ -303,10 +313,12 @@ func TestLexerAPI(t *testing.T) {
 		require.Equal(t, rune(0), NewLexer("", "").EatCh())
 	})
 
-	t.Run("eat multi comment error", func(t *testing.T) {
-		lx := NewLexer("/* never", "")
-		lx.MatchChars([]rune{'/', '*'})
-		require.Error(t, lx.EatMultiComment())
+	t.Run("multibyte rune takes one column", func(t *testing.T) {
+		lx := NewLexer("яя", "")
+		lx.EatCh()
+		require.Equal(t, 2, lx.ColNo)
+		lx.EatCh()
+		require.Equal(t, 3, lx.ColNo)
 	})
 }
 
