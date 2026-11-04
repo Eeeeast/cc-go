@@ -2,10 +2,8 @@ package lex
 
 import (
 	"fmt"
-	"math/big"
 	"os"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -15,6 +13,9 @@ type ParseError struct {
 }
 
 func (e *ParseError) Error() string {
+	if e.Pos.SrcName == "" {
+		return fmt.Sprintf("%s", e.Msg)
+	}
 	if e.Pos.LineNo == 0 {
 		return fmt.Sprintf("%s: %s", e.Pos.SrcName, e.Msg)
 	}
@@ -24,9 +25,9 @@ func (e *ParseError) Error() string {
 	return fmt.Sprintf("%s:%d:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Pos.ColNo, e.Msg)
 }
 
-func NewParseError(l *Lexer, msg string) *ParseError {
+func NewParseError(pos SrcPos, msg string) *ParseError {
 	return &ParseError{
-		Pos: l.GetPos(),
+		Pos: pos,
 		Msg: msg,
 	}
 }
@@ -60,16 +61,9 @@ func NewLexer(inputStr string, srcName string) *Lexer {
 func FromFile(fileName string) (*Lexer, error) {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
-		return nil, &ParseError{
-			Pos: SrcPos{},
-			Msg: fmt.Sprintf("unreadable input file %q", fileName),
-		}
+		return nil, NewParseError(SrcPos{}, fmt.Sprintf("unreadable input file %q", fileName))
 	}
 	return NewLexer(string(data), fileName), nil
-}
-
-func (l *Lexer) GetSrcName() string {
-	return l.SrcName
 }
 
 func (l *Lexer) GetPos() SrcPos {
@@ -81,22 +75,10 @@ func (l *Lexer) EOF() bool {
 }
 
 func (l *Lexer) PeekCh() rune {
-	return l.PeekChAt(0)
-}
-
-func (l *Lexer) PeekChAt(charOffset int) rune {
-	bytePos := l.idx
-	for range charOffset {
-		if bytePos >= len(l.input) {
-			return 0
-		}
-		_, width := utf8.DecodeRuneInString(l.input[bytePos:])
-		bytePos += width
-	}
-	if bytePos >= len(l.input) {
+	if l.idx >= len(l.input) {
 		return 0
 	}
-	r, _ := utf8.DecodeRuneInString(l.input[bytePos:])
+	r, _ := utf8.DecodeRuneInString(l.input[l.idx:])
 	return r
 }
 
@@ -149,29 +131,19 @@ func (l *Lexer) MatchChars(chars []rune) bool {
 	return true
 }
 
-func (l *Lexer) PeekStr(s string) bool {
-	return strings.HasPrefix(l.input[l.idx:], s)
-}
-
 func (l *Lexer) EatComment() {
 	for !l.EOF() && l.EatCh() != '\n' {
 	}
 }
 
 func (l *Lexer) EatMultiComment() error {
-	for depth := 1; depth > 0; {
-		switch {
-		case l.EOF():
-			return l.ParseError("unexpected end of input inside multi-line comment")
-		case l.MatchChars([]rune{'/', '*'}):
-			depth++
-		case l.MatchChars([]rune{'*', '/'}):
-			depth--
-		default:
-			l.EatCh()
+	for !l.EOF() {
+		if l.MatchChars([]rune{'*', '/'}) {
+			return nil
 		}
+		l.EatCh()
 	}
-	return nil
+	return NewParseError(l.GetPos(), "unexpected end of input inside multi-line comment")
 }
 
 func (l *Lexer) EatWS() error {
@@ -183,7 +155,7 @@ func (l *Lexer) EatWS() error {
 			if err := l.EatMultiComment(); err != nil {
 				return err
 			}
-		case strings.ContainsRune(" \t\n\r\x0c", l.PeekCh()):
+		case strings.ContainsRune(" \t\n\r", l.PeekCh()):
 			l.EatCh()
 		default:
 			return nil
@@ -201,6 +173,7 @@ func (l *Lexer) NextToken() (Token, error) {
 		return Token{Type: TokenEOF, Pos: pos}, nil
 	}
 
+	saved := *l
 	startIdx := l.idx
 	ch := l.PeekCh()
 
@@ -232,15 +205,15 @@ func (l *Lexer) NextToken() (Token, error) {
 		lexeme, err := l.ReadNumeric()
 		return Token{Type: TokenInt, Lexeme: lexeme, Pos: pos}, err
 	}
-	if ch == '"' || ch == '\'' {
-		strVal, err := l.ParseStr(ch)
+	if ch == '"' {
+		strVal, err := l.ReadString()
 		return Token{Type: TokenString, Lexeme: strVal, Pos: pos}, err
 	}
 
-	return Token{}, l.ParseError(fmt.Sprintf("unexpected character %q", ch))
+	*l = saved
+	return Token{}, NewParseError(pos, fmt.Sprintf("unexpected character %q", ch))
 }
 
-// Функция TokenizeAll считывает все токены, включая TokenEOF
 func (l *Lexer) TokenizeAll() ([]Token, error) {
 	var tokens []Token
 	for {
@@ -255,175 +228,49 @@ func (l *Lexer) TokenizeAll() ([]Token, error) {
 	}
 }
 
-func (l *Lexer) ParseError(msg string) error {
-	return NewParseError(l, msg)
-}
+func (l *Lexer) ReadString() (string, error) {
+	startIdx := l.idx
 
-func (l *Lexer) ParseInt(radix int) (*big.Int, error) {
-	if l.EOF() || runeToDigit(l.PeekCh(), radix) < 0 {
-		return nil, l.ParseError("expected digit")
+	pos := l.GetPos()
+	if !l.MatchChar('"') {
+		return "", NewParseError(pos, `expected opening quote '"'`)
 	}
-
-	intVal, radixBig := new(big.Int), big.NewInt(int64(radix))
-
-	for !l.EOF() {
-		ch := l.PeekCh()
-
-		if ch == '_' {
-			if runeToDigit(l.PeekChAt(1), radix) < 0 {
-				return nil, l.ParseError("'_' must separate successive digits")
-			}
-			l.EatCh()
-			continue
-		}
-
-		digit := runeToDigit(ch, radix)
-		if digit < 0 {
-			break
-		}
-
-		intVal.Mul(intVal, radixBig)
-		intVal.Add(intVal, big.NewInt(int64(digit)))
-		l.EatCh()
-	}
-
-	return intVal, nil
-}
-
-func (l *Lexer) ParseStr(endCh rune) (string, error) {
-	if !l.MatchChar(endCh) {
-		return "", l.ParseError(fmt.Sprintf("expected opening quote %q", endCh))
-	}
-
-	var out strings.Builder
 
 	for {
+		pos = l.GetPos()
+
 		if l.EOF() {
-			return "", l.ParseError("unexpected end of input while parsing string literal")
+			return "", NewParseError(pos, "unexpected end of input inside string literal")
 		}
 
-		ch := l.EatCh()
-		if ch == endCh {
-			break
-		}
-
-		if ch == '\\' {
-			switch l.EatCh() {
-			case '\\':
-				out.WriteRune('\\')
-			case '\'':
-				out.WriteRune('\'')
-			case '"':
-				out.WriteRune('"')
-			case 't':
-				out.WriteRune('\t')
-			case 'r':
-				out.WriteRune('\r')
-			case 'n':
-				out.WriteRune('\n')
-			case '0':
-				out.WriteRune(0)
-
-			case 'x':
-				d0, d1 := runeToDigit(l.EatCh(), 16), runeToDigit(l.EatCh(), 16)
-				if d0 < 0 || d1 < 0 {
-					return "", l.ParseError("invalid hexadecimal escape sequence")
-				}
-				byteVal := (d0 << 4) + d1
-				if byteVal > 0x7F {
-					return "", l.ParseError("hexadecimal escape sequence must be in the ASCII range \\x00-\\x7F")
-				}
-				out.WriteByte(byte(byteVal))
-
-			case 'u':
-				var codepoint int64
-				numDigits := 0
-
-				for {
-					d := runeToDigit(l.PeekCh(), 16)
-					if d < 0 {
-						break
-					}
-					if numDigits == 6 {
-						return "", l.ParseError("unicode escape sequence has more than 6 hex digits")
-					}
-					l.EatCh()
-					codepoint = (codepoint << 4) + int64(d)
-					numDigits++
-				}
-
-				if numDigits == 0 {
-					return "", l.ParseError("expected hex digits in unicode escape sequence")
-				}
-
-				if !utf8.ValidRune(rune(codepoint)) || codepoint > unicode.MaxRune {
-					return "", l.ParseError("invalid unicode codepoint in escape sequence")
-				}
-				out.WriteRune(rune(codepoint))
-			default:
-				return "", l.ParseError("unknown escape sequence")
+		switch l.PeekCh() {
+		case '\n':
+			return "", NewParseError(pos, "unexpected new line inside string literal")
+		case '"':
+			l.EatCh()
+			return l.input[startIdx:l.idx], nil
+		case '\\':
+			l.EatCh()
+			if l.EOF() {
+				return "", NewParseError(pos, "unexpected end of input after '\\'")
 			}
-			continue
+
+			esc := l.EatCh()
+			switch esc {
+			case '"', '\\', 'n', 't':
+			default:
+				return "", NewParseError(pos, fmt.Sprintf("unknown escape sequence '\\%c'", esc))
+			}
+		default:
+			l.EatCh()
 		}
-
-		out.WriteRune(ch)
 	}
-
-	return out.String(), nil
 }
 
-// Парсит целочисленный литерал в системах счисления 2 (0b), 8 (0o), 16 (0x) или 10
 func (l *Lexer) ReadNumeric() (string, error) {
-	radix := 10
-	if l.PeekCh() == '0' {
-		p1 := l.PeekChAt(1)
-		switch p1 {
-		case 'b', 'B':
-			radix = 2
-		case 'o', 'O':
-			radix = 8
-		case 'x', 'X':
-			radix = 16
-		}
-
-		if radix != 10 {
-			l.EatCh()
-			l.EatCh()
-		}
-	}
-
-	val, err := l.ParseInt(radix)
-	if err != nil {
-		return "", err
-	}
-	return val.String(), nil
-}
-
-func (l *Lexer) ParseIdent() (string, error) {
-	if l.EOF() || !IsIdentStart(l.PeekCh()) {
-		return "", l.ParseError("expected identifier")
-	}
-
-	startByteIdx := l.idx
-	for !l.EOF() && IsIdentCh(l.PeekCh()) {
+	startIdx := l.idx
+	for !l.EOF() && l.PeekCh() >= '0' && l.PeekCh() <= '9' {
 		l.EatCh()
 	}
-
-	return l.input[startByteIdx:l.idx], nil
-}
-
-func runeToDigit(ch rune, radix int) int {
-	d := -1
-	switch {
-	case ch >= '0' && ch <= '9':
-		d = int(ch - '0')
-	case ch >= 'a' && ch <= 'z':
-		d = int(ch-'a') + 10
-	case ch >= 'A' && ch <= 'Z':
-		d = int(ch-'A') + 10
-	}
-	if d >= radix {
-		return -1
-	}
-	return d
+	return l.input[startIdx:l.idx], nil
 }

@@ -10,11 +10,6 @@ const (
 	TokenIdent
 	TokenInt
 	TokenString
-	TokenBool
-
-	// Пробельные токены
-	TokenCommentLine
-	TokenCommentBlock
 
 	// Ключевые слова
 	TokenKwBreak
@@ -25,6 +20,8 @@ const (
 	TokenKwFunc
 	TokenKwStruct
 	TokenKwReturn
+	TokenKwTrue
+	TokenKwFalse
 	TokenKwType
 	TokenKwVar
 

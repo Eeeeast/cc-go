@@ -38,8 +38,8 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		{"!", TokenNot},
 
 		// Булевы константы
-		{"true", TokenBool},
-		{"false", TokenBool},
+		{"true", TokenKwTrue},
+		{"false", TokenKwFalse},
 
 		// Cвязки
 		{"+", TokenPlus},
@@ -86,9 +86,9 @@ func buildLanguageTrie() *DoubleArrayTrie {
 	}
 
 	da := &DoubleArrayTrie{
-		base:   make([]int, 154),
-		check:  make([]int, 154),
-		output: make([]TokenType, 154),
+		base:   make([]int, 256),
+		check:  make([]int, 256),
+		output: make([]TokenType, 256),
 	}
 	da.check[daRoot] = -1
 
@@ -141,17 +141,4 @@ func (d *DoubleArrayTrie) Step(state int, ch rune) (int, bool) {
 		return next, true
 	}
 	return 0, false
-}
-
-func IsReserved(ident string) bool {
-	state := daRoot
-	for _, ch := range ident {
-		next, ok := defaultTrie.Step(state, ch)
-		if !ok {
-			return false
-		}
-		state = next
-	}
-	tt := defaultTrie.output[state]
-	return tt >= TokenKwBreak && tt <= TokenKwVar
 }

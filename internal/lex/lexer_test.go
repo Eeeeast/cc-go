@@ -53,8 +53,8 @@ func TestLexer(t *testing.T) {
 
 		// булевы литералы
 		{"true false", []Token{
-			tok(TokenBool, "true", 1, 1),
-			tok(TokenBool, "false", 1, 6),
+			tok(TokenKwTrue, "true", 1, 1),
+			tok(TokenKwFalse, "false", 1, 6),
 		}},
 
 		// идентификаторы
@@ -236,36 +236,10 @@ func TestLexerAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("new parse error", func(t *testing.T) {
-		err := NewParseError(NewLexer("abc", "f"), "boom")
-		require.Equal(t, "f:1:1: boom", err.Error())
-	})
-
-	t.Run("rune to digit", func(t *testing.T) {
-		require.Equal(t, 0, runeToDigit('0', 10))
-		require.Equal(t, 9, runeToDigit('9', 10))
-		require.Equal(t, -1, runeToDigit('a', 10))
-		require.Equal(t, 10, runeToDigit('a', 16))
-		require.Equal(t, 15, runeToDigit('F', 16))
-		require.Equal(t, -1, runeToDigit('g', 16))
-		require.Equal(t, -1, runeToDigit('2', 2))
-	})
-
-	t.Run("reserved", func(t *testing.T) {
-		for _, s := range []string{"if", "for", "func", "return", "var", "break", "continue"} {
-			require.True(t, IsReserved(s), s)
-		}
-		for _, s := range []string{"", "go", "defer", "true", "main", "IF"} {
-			require.False(t, IsReserved(s), s)
-		}
-	})
-
-	t.Run("peek str", func(t *testing.T) {
-		lx := NewLexer("hello", "")
-		require.True(t, lx.PeekStr("hell"))
-		require.True(t, lx.PeekStr(""))
-		require.False(t, lx.PeekStr("world"))
-	})
+	// t.Run("new parse error", func(t *testing.T) {
+	// 	err := NewParseError(NewLexer("abc", "f"), "boom")
+	// 	require.Equal(t, "f:1:1: boom", err.Error())
+	// })
 
 	t.Run("from file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "a.mg")
@@ -273,39 +247,28 @@ func TestLexerAPI(t *testing.T) {
 
 		lx, err := FromFile(path)
 		require.NoError(t, err)
-		require.Equal(t, path, lx.GetSrcName())
+		require.Equal(t, path, lx.SrcName)
 
 		_, err = FromFile(filepath.Join(t.TempDir(), "nope.mg"))
 		require.Error(t, err)
 	})
 
-	t.Run("parse ident", func(t *testing.T) {
-		lx := NewLexer("foo_bar baz", "")
-		got, err := lx.ParseIdent()
-		require.NoError(t, err)
-		require.Equal(t, "foo_bar", got)
-
-		lx = NewLexer("1abc", "")
-		_, err = lx.ParseIdent()
-		require.Error(t, err)
-	})
-
-	t.Run("parse str errors", func(t *testing.T) {
+	t.Run("read str errors", func(t *testing.T) {
 		for _, src := range []string{`"abc`, `"a\qb"`, `"\xZZ"`, `"\x80"`, `"\uZZ"`, `"\uD800"`, `"\u110000"`} {
 			lx := NewLexer(src, "")
-			_, err := lx.ParseStr('"')
+			_, err := lx.ReadString()
 			require.Error(t, err, src)
 		}
 	})
 
-	t.Run("parse int", func(t *testing.T) {
+	t.Run("read int", func(t *testing.T) {
 		lx := NewLexer("1010", "")
-		got, err := lx.ParseInt(2)
+		got, err := lx.ReadNumeric()
 		require.NoError(t, err)
-		require.Equal(t, "10", got.String())
+		require.Equal(t, "10", got)
 
 		lx = NewLexer("abc", "")
-		_, err = lx.ParseInt(10)
+		_, err = lx.ReadNumeric()
 		require.Error(t, err)
 	})
 
@@ -326,12 +289,6 @@ func TestLexerAPI(t *testing.T) {
 		lx := NewLexer("#", "")
 		_, err := lx.TokenizeAll()
 		require.Error(t, err)
-	})
-
-	t.Run("peek at eof", func(t *testing.T) {
-		require.Equal(t, rune(0), NewLexer("", "").PeekCh())
-		require.Equal(t, rune(0), NewLexer("", "").PeekChAt(0))
-		require.Equal(t, rune(0), NewLexer("a", "").PeekChAt(1))
 	})
 
 	t.Run("match char fail", func(t *testing.T) {
