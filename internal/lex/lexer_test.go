@@ -166,6 +166,7 @@ func TestLexer(t *testing.T) {
 		// комментарии
 		{"// comment\nx", []Token{tok(TokenIdent, "x", 2, 1)}},
 		{"/* comment */ x", []Token{tok(TokenIdent, "x", 1, 15)}},
+		{"/* こんにちは */ x", []Token{tok(TokenIdent, "x", 1, 13)}},
 		{"/* a */ /* b */ x", []Token{tok(TokenIdent, "x", 1, 17)}},
 
 		// разбиение двойных символов
