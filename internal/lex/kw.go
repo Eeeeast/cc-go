@@ -1,10 +1,9 @@
 package lex
 
-import (
-	"sort"
-)
+import "slices"
 
 const daRoot = 1
+const daCapacity = 256
 
 type DoubleArrayTrie struct {
 	base   []int
@@ -19,11 +18,56 @@ type trieNode struct {
 
 var defaultTrie = buildLanguageTrie()
 
+type trieEntry struct {
+	text  string
+	ttype TokenType
+}
+
+func buildPrefixTree(entries []trieEntry) *trieNode {
+	root := &trieNode{children: make(map[int]*trieNode)}
+	for _, e := range entries {
+		curr := root
+		for i := range len(e.text) {
+			c := int(e.text[i])
+			if curr.children[c] == nil {
+				curr.children[c] = &trieNode{children: make(map[int]*trieNode)}
+			}
+			curr = curr.children[c]
+		}
+		curr.ttype = e.ttype
+	}
+	return root
+}
+
+func sortedKeys(m map[int]*trieNode) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func findBase(check []int, keys []int) int {
+	for b := 2; ; b++ {
+		ok := true
+		for _, k := range keys {
+			if b+k >= len(check) {
+				panic("lex: DoubleArrayTrie capacity exceeded")
+			}
+			if check[b+k] != 0 {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return b
+		}
+	}
+}
+
 func buildLanguageTrie() *DoubleArrayTrie {
-	entries := []struct {
-		text  string
-		ttype TokenType
-	}{
+	entries := []trieEntry{
 		// Действия и декларации
 		{"for", TokenKwFor},
 		{"if", TokenKwIf},
@@ -41,7 +85,7 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		{"true", TokenKwTrue},
 		{"false", TokenKwFalse},
 
-		// Cвязки
+		// Связки
 		{"+", TokenPlus},
 		{"-", TokenMinus},
 		{"*", TokenStar},
@@ -72,23 +116,12 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		{"]", TokenRBracket},
 	}
 
-	root := &trieNode{children: make(map[int]*trieNode)}
-	for _, e := range entries {
-		curr := root
-		for i := 0; i < len(e.text); i++ {
-			c := int(e.text[i])
-			if curr.children[c] == nil {
-				curr.children[c] = &trieNode{children: make(map[int]*trieNode)}
-			}
-			curr = curr.children[c]
-		}
-		curr.ttype = e.ttype
-	}
+	root := buildPrefixTree(entries)
 
 	da := &DoubleArrayTrie{
-		base:   make([]int, 256),
-		check:  make([]int, 256),
-		output: make([]TokenType, 256),
+		base:   make([]int, daCapacity),
+		check:  make([]int, daCapacity),
+		output: make([]TokenType, daCapacity),
 	}
 	da.check[daRoot] = -1
 
@@ -97,26 +130,8 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		if len(node.children) == 0 {
 			return
 		}
-		keys := make([]int, 0, len(node.children))
-		for k := range node.children {
-			keys = append(keys, k)
-		}
-		sort.Ints(keys)
-
-		b := 2
-		for {
-			ok := true
-			for _, k := range keys {
-				if da.check[b+k] != 0 {
-					ok = false
-					break
-				}
-			}
-			if ok {
-				break
-			}
-			b++
-		}
+		keys := sortedKeys(node.children)
+		b := findBase(da.check, keys)
 
 		da.base[state] = b
 		for _, k := range keys {

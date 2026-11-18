@@ -7,11 +7,13 @@ const (
 	TokenEOF
 
 	// Динамические токены
+
 	TokenIdent
 	TokenInt
 	TokenString
 
 	// Ключевые слова
+
 	TokenKwBreak
 	TokenKwContinue
 	TokenKwFor
@@ -26,6 +28,7 @@ const (
 	TokenKwVar
 
 	// Операторы и логические отношения
+
 	TokenPlus    // +
 	TokenMinus   // -
 	TokenStar    // *
@@ -46,6 +49,7 @@ const (
 	TokenDot     // .
 
 	// Разделители и терминаторы
+
 	TokenLParen    // (
 	TokenRParen    // )
 	TokenLBrace    // {

@@ -14,7 +14,7 @@ type ParseError struct {
 
 func (e *ParseError) Error() string {
 	if e.Pos.SrcName == "" {
-		return fmt.Sprintf("%s", e.Msg)
+		return e.Msg
 	}
 	if e.Pos.LineNo == 0 {
 		return fmt.Sprintf("%s: %s", e.Pos.SrcName, e.Msg)
@@ -32,29 +32,29 @@ func NewParseError(pos SrcPos, msg string) *ParseError {
 	}
 }
 
-func IsIdentStart(ch rune) bool {
+func isIdentStart(ch rune) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
 }
 
-func IsIdentCh(ch rune) bool {
-	return IsIdentStart(ch) || (ch >= '0' && ch <= '9')
+func isIdentCh(ch rune) bool {
+	return isIdentStart(ch) || (ch >= '0' && ch <= '9')
 }
 
 type Lexer struct {
 	input   string
 	idx     int
-	SrcName string
-	LineNo  int
-	ColNo   int
+	srcName string
+	lineNo  int
+	colNo   int
 }
 
 func NewLexer(inputStr string, srcName string) *Lexer {
 	return &Lexer{
 		input:   inputStr,
 		idx:     0,
-		SrcName: srcName,
-		LineNo:  1,
-		ColNo:   1,
+		srcName: srcName,
+		lineNo:  1,
+		colNo:   1,
 	}
 }
 
@@ -67,7 +67,7 @@ func FromFile(fileName string) (*Lexer, error) {
 }
 
 func (l *Lexer) GetPos() SrcPos {
-	return NewSrcPos(l.SrcName, l.LineNo, l.ColNo)
+	return NewSrcPos(l.srcName, l.lineNo, l.colNo)
 }
 
 func (l *Lexer) EOF() bool {
@@ -90,10 +90,10 @@ func (l *Lexer) EatCh() rune {
 	l.idx += width
 
 	if ch == '\n' {
-		l.LineNo++
-		l.ColNo = 1
+		l.lineNo++
+		l.colNo = 1
 	} else {
-		l.ColNo++
+		l.colNo++
 	}
 	return ch
 }
@@ -132,7 +132,10 @@ func (l *Lexer) MatchChars(chars []rune) bool {
 }
 
 func (l *Lexer) EatComment() {
-	for !l.EOF() && l.EatCh() != '\n' {
+	for !l.EOF() {
+		if l.EatCh() == '\n' {
+			break
+		}
 	}
 }
 
@@ -152,7 +155,8 @@ func (l *Lexer) EatWS() error {
 		case l.MatchChars([]rune{'/', '/'}):
 			l.EatComment()
 		case l.MatchChars([]rune{'/', '*'}):
-			if err := l.EatMultiComment(); err != nil {
+			err := l.EatMultiComment()
+			if err != nil {
 				return err
 			}
 		case strings.ContainsRune(" \t\n\r", l.PeekCh()):
@@ -170,7 +174,7 @@ func (l *Lexer) NextToken() (Token, error) {
 	}
 	pos := l.GetPos()
 	if l.EOF() {
-		return Token{Type: TokenEOF, Pos: pos}, nil
+		return Token{Type: TokenEOF, Lexeme: "", Pos: pos}, nil
 	}
 
 	saved := *l
@@ -187,9 +191,9 @@ func (l *Lexer) NextToken() (Token, error) {
 		state = next
 	}
 
-	if IsIdentStart(ch) {
-		if (!l.EOF() && IsIdentCh(l.PeekCh())) || defaultTrie.output[state] == TokenNone {
-			for !l.EOF() && IsIdentCh(l.PeekCh()) {
+	if isIdentStart(ch) {
+		if (!l.EOF() && isIdentCh(l.PeekCh())) || defaultTrie.output[state] == TokenNone {
+			for !l.EOF() && isIdentCh(l.PeekCh()) {
 				l.EatCh()
 			}
 			return Token{Type: TokenIdent, Lexeme: l.input[startIdx:l.idx], Pos: pos}, nil
@@ -202,8 +206,8 @@ func (l *Lexer) NextToken() (Token, error) {
 	}
 
 	if ch >= '0' && ch <= '9' {
-		lexeme, err := l.ReadNumeric()
-		return Token{Type: TokenInt, Lexeme: lexeme, Pos: pos}, err
+		lexeme := l.ReadNumeric()
+		return Token{Type: TokenInt, Lexeme: lexeme, Pos: pos}, nil
 	}
 	if ch == '"' {
 		strVal, err := l.ReadString()
@@ -246,6 +250,8 @@ func (l *Lexer) ReadString() (string, error) {
 		switch l.PeekCh() {
 		case '\n':
 			return "", NewParseError(pos, "unexpected new line inside string literal")
+		case '\r':
+			return "", NewParseError(pos, "unexpected carriage return inside string literal")
 		case '"':
 			l.EatCh()
 			return l.input[startIdx:l.idx], nil
@@ -257,7 +263,7 @@ func (l *Lexer) ReadString() (string, error) {
 
 			esc := l.EatCh()
 			switch esc {
-			case '"', '\\', 'n', 't':
+			case '"', '\\', 'r', 'n', 't':
 			default:
 				return "", NewParseError(pos, fmt.Sprintf("unknown escape sequence '\\%c'", esc))
 			}
@@ -267,10 +273,10 @@ func (l *Lexer) ReadString() (string, error) {
 	}
 }
 
-func (l *Lexer) ReadNumeric() (string, error) {
+func (l *Lexer) ReadNumeric() string {
 	startIdx := l.idx
 	for !l.EOF() && l.PeekCh() >= '0' && l.PeekCh() <= '9' {
 		l.EatCh()
 	}
-	return l.input[startIdx:l.idx], nil
+	return l.input[startIdx:l.idx]
 }

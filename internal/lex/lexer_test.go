@@ -17,16 +17,16 @@ func (c *testCase) name() string {
 	return c.source
 }
 
-func tok(t TokenType, lex string, line, col int) Token {
+func tok(t TokenType, lexeme string, line, col int) Token {
 	return Token{
 		Type:   t,
-		Lexeme: lex,
-		Pos:    SrcPos{LineNo: line, ColNo: col},
+		Lexeme: lexeme,
+		Pos:    SrcPos{SrcName: "test", LineNo: line, ColNo: col},
 	}
 }
 
 func tokenize(source string) []Token {
-	lx := NewLexer(source, "")
+	lx := NewLexer(source, "test")
 	tokens, err := lx.TokenizeAll()
 	if err != nil {
 		panic(err)
@@ -50,6 +50,8 @@ func TestLexer(t *testing.T) {
 		{"var", []Token{tok(TokenKwVar, "var", 1, 1)}},
 		{"break", []Token{tok(TokenKwBreak, "break", 1, 1)}},
 		{"continue", []Token{tok(TokenKwContinue, "continue", 1, 1)}},
+		{"123abc", []Token{tok(TokenInt, "123", 1, 1), tok(TokenIdent, "abc", 1, 4)}},
+		{"123_abc", []Token{tok(TokenInt, "123", 1, 1), tok(TokenIdent, "_abc", 1, 4)}},
 
 		// булевы литералы
 		{"true false", []Token{
@@ -245,6 +247,9 @@ func TestLexerErrors(t *testing.T) {
 		{"escape hex", `"a\x41"`},
 		{"escape unicode", `"a\u0041"`},
 		{"перенос строки в строке", "\"a\nb\""},
+		{"CR внутри строки", "\"a\rb\""},
+		{"обратная косая в конце файла", "\"abc\\"},
+		{"обратная косая перед LF", "\"a\\\nb\""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -273,11 +278,11 @@ func TestLexerAPI(t *testing.T) {
 
 	t.Run("from file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "a.mg")
-		require.NoError(t, os.WriteFile(path, []byte("abc"), 0o644))
+		require.NoError(t, os.WriteFile(path, []byte("abc"), 0o600))
 
 		lx, err := FromFile(path)
 		require.NoError(t, err)
-		require.Equal(t, path, lx.SrcName)
+		require.Equal(t, path, lx.srcName)
 
 		_, err = FromFile(filepath.Join(t.TempDir(), "nope.mg"))
 		require.Error(t, err)
@@ -292,14 +297,12 @@ func TestLexerAPI(t *testing.T) {
 
 	t.Run("read numeric", func(t *testing.T) {
 		lx := NewLexer("123abc", "")
-		got, err := lx.ReadNumeric()
-		require.NoError(t, err)
+		got := lx.ReadNumeric()
 		require.Equal(t, "123", got)
 
 		lx = NewLexer("abc", "")
-		got, err = lx.ReadNumeric()
-		require.NoError(t, err)
-		require.Equal(t, "", got)
+		got = lx.ReadNumeric()
+		require.Empty(t, got)
 	})
 
 	t.Run("match char fail", func(t *testing.T) {
@@ -317,9 +320,9 @@ func TestLexerAPI(t *testing.T) {
 	t.Run("multibyte rune takes one column", func(t *testing.T) {
 		lx := NewLexer("яя", "")
 		lx.EatCh()
-		require.Equal(t, 2, lx.ColNo)
+		require.Equal(t, 2, lx.colNo)
 		lx.EatCh()
-		require.Equal(t, 3, lx.ColNo)
+		require.Equal(t, 3, lx.colNo)
 	})
 }
 
@@ -329,7 +332,7 @@ func TestEndOfFileToken(t *testing.T) {
 		tok, err := lx.NextToken()
 		require.NoError(t, err)
 		require.Equal(t, TokenEOF, tok.Type)
-		require.Equal(t, "", tok.Lexeme)
+		require.Empty(t, tok.Lexeme)
 		require.Equal(t, 1, tok.Pos.LineNo)
 		require.Equal(t, 1, tok.Pos.ColNo)
 	})
