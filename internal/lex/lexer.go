@@ -61,7 +61,7 @@ func NewLexer(inputStr string, srcName string) *Lexer {
 func FromFile(fileName string) (*Lexer, error) {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
-		return nil, NewParseError(SrcPos{}, fmt.Sprintf("unreadable input file %q", fileName))
+		return nil, NewParseError(SrcPos{}, fmt.Sprintf("unreadable input file %q: %v", fileName, err))
 	}
 	return NewLexer(string(data), fileName), nil
 }
