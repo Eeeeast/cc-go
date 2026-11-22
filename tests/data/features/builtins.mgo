@@ -1,0 +1,5 @@
+func main() {
+	fmt.Println(abs(-42));
+	fmt.Println(min(3, 7));
+	fmt.Println(max(3, 7));
+}
