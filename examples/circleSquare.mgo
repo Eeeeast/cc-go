@@ -1,0 +1,10 @@
+var piScaled int = 314;
+
+func circleArea(r int) int {
+    return piScaled * r * r / 100;
+}
+
+func main() {
+    var r int = fmt.ReadInt();
+    fmt.Println(circleArea(r));
+}

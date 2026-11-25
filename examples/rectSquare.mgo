@@ -1,0 +1,15 @@
+func rectArea(x1 int, y1 int, x2 int, y2 int) int {
+    var width int = abs(x2 - x1);
+    var height int = abs(y2 - y1);
+    return width * height;
+}
+
+func main() {
+    var x1 int = fmt.ReadInt();
+    var y1 int = fmt.ReadInt();
+    var x2 int = fmt.ReadInt();
+    var y2 int = fmt.ReadInt();
+
+    var area int = rectArea(x1, y1, x2, y2);
+    fmt.Println(area);
+}
