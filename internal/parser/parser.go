@@ -29,7 +29,8 @@ type Parser struct {
 
 func New(lexer *lex.Lexer) (*Parser, error) {
 	p := &Parser{lexer: lexer}
-	if err := p.advance(); err != nil {
+	err := p.advance()
+	if err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -54,7 +55,8 @@ func (p *Parser) expect(tt lex.TokenType) (lex.Token, error) {
 		)
 	}
 	tok := p.curr
-	if err := p.advance(); err != nil {
+	err := p.advance()
+	if err != nil {
 		return lex.Token{}, err
 	}
 	return tok, nil
@@ -74,7 +76,8 @@ func (p *Parser) syntaxError(pos lex.SrcPos, format string, args ...any) error {
 
 // program = "func" , "main" , "(" , ")" , "{" , { statement } , "}" , ? конец файла ? ;
 func (p *Parser) ParseProgram() ([]vm.Instruction, error) {
-	if _, err := p.expect(lex.TokenKwFunc); err != nil {
+	_, err := p.expect(lex.TokenKwFunc)
+	if err != nil {
 		return nil, err
 	}
 
@@ -86,26 +89,32 @@ func (p *Parser) ParseProgram() ([]vm.Instruction, error) {
 		return nil, p.syntaxError(nameTok.Pos, "expected entry point 'main', got %q", nameTok.Lexeme)
 	}
 
-	if _, err := p.expect(lex.TokenLParen); err != nil {
+	_, err = p.expect(lex.TokenLParen)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := p.expect(lex.TokenRParen); err != nil {
+	_, err = p.expect(lex.TokenRParen)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := p.expect(lex.TokenLBrace); err != nil {
+	_, err = p.expect(lex.TokenLBrace)
+	if err != nil {
 		return nil, err
 	}
 
 	for p.curr.Type != lex.TokenRBrace && p.curr.Type != lex.TokenEOF {
-		if err := p.ParseStatement(); err != nil {
+		err = p.ParseStatement()
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	if _, err := p.expect(lex.TokenRBrace); err != nil {
+	_, err = p.expect(lex.TokenRBrace)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := p.expect(lex.TokenEOF); err != nil {
+	_, err = p.expect(lex.TokenEOF)
+	if err != nil {
 		return nil, err
 	}
 
@@ -114,7 +123,8 @@ func (p *Parser) ParseProgram() ([]vm.Instruction, error) {
 
 // statement = expression , ";" ;
 func (p *Parser) ParseStatement() error {
-	if err := p.ParseExpression(); err != nil {
+	err := p.ParseExpression()
+	if err != nil {
 		return err
 	}
 	semiTok, err := p.expect(lex.TokenSemicolon)
@@ -132,16 +142,19 @@ func (p *Parser) ParseExpression() error {
 
 // additive_expression = multiplicative_expression , { ( "+" | "-" ) , multiplicative_expression } ;
 func (p *Parser) ParseAdditiveExpression() error {
-	if err := p.ParseMultiplicativeExpression(); err != nil {
+	err := p.ParseMultiplicativeExpression()
+	if err != nil {
 		return err
 	}
 
 	for p.curr.Type == lex.TokenPlus || p.curr.Type == lex.TokenMinus {
 		opTok := p.curr
-		if err := p.advance(); err != nil {
+		err := p.advance()
+		if err != nil {
 			return err
 		}
-		if err := p.ParseMultiplicativeExpression(); err != nil {
+		err = p.ParseMultiplicativeExpression()
+		if err != nil {
 			return err
 		}
 		if opTok.Type == lex.TokenPlus {
@@ -156,16 +169,19 @@ func (p *Parser) ParseAdditiveExpression() error {
 
 // multiplicative_expression = unary_expression , { ( "*" | "/" | "%" ) , unary_expression } ;
 func (p *Parser) ParseMultiplicativeExpression() error {
-	if err := p.ParseUnaryExpression(); err != nil {
+	err := p.ParseUnaryExpression()
+	if err != nil {
 		return err
 	}
 
 	for p.curr.Type == lex.TokenStar || p.curr.Type == lex.TokenSlash || p.curr.Type == lex.TokenPercent {
 		opTok := p.curr
-		if err := p.advance(); err != nil {
+		err := p.advance()
+		if err != nil {
 			return err
 		}
-		if err := p.ParseUnaryExpression(); err != nil {
+		err = p.ParseUnaryExpression()
+		if err != nil {
 			return err
 		}
 		switch opTok.Type {
@@ -185,10 +201,12 @@ func (p *Parser) ParseMultiplicativeExpression() error {
 func (p *Parser) ParseUnaryExpression() error {
 	if p.curr.Type == lex.TokenMinus {
 		opTok := p.curr
-		if err := p.advance(); err != nil {
+		err := p.advance()
+		if err != nil {
 			return err
 		}
-		if err := p.ParseUnaryExpression(); err != nil {
+		err = p.ParseUnaryExpression()
+		if err != nil {
 			return err
 		}
 		p.emit(vm.OpNeg, 0, opTok.Pos)
@@ -206,7 +224,8 @@ func (p *Parser) ParsePrimaryExpression() error {
 		if err != nil {
 			return p.syntaxError(tok.Pos, "integer literal out of int64 range: %s", tok.Lexeme)
 		}
-		if err := p.advance(); err != nil {
+		err = p.advance()
+		if err != nil {
 			return err
 		}
 		p.emit(vm.OpPush, val, tok.Pos)
@@ -216,13 +235,16 @@ func (p *Parser) ParsePrimaryExpression() error {
 		return p.ParseCallExpression()
 
 	case lex.TokenLParen:
-		if err := p.advance(); err != nil {
+		err := p.advance()
+		if err != nil {
 			return err
 		}
-		if err := p.ParseExpression(); err != nil {
+		err = p.ParseExpression()
+		if err != nil {
 			return err
 		}
-		if _, err := p.expect(lex.TokenRParen); err != nil {
+		_, err = p.expect(lex.TokenRParen)
+		if err != nil {
 			return err
 		}
 		return nil
@@ -241,7 +263,8 @@ func (p *Parser) ParseCallExpression() error {
 
 	funcName := first.Lexeme
 	if p.curr.Type == lex.TokenDot {
-		if err := p.advance(); err != nil {
+		err := p.advance()
+		if err != nil {
 			return err
 		}
 		second, err := p.expect(lex.TokenIdent)
@@ -251,7 +274,8 @@ func (p *Parser) ParseCallExpression() error {
 		funcName += "." + second.Lexeme
 	}
 
-	if _, err := p.expect(lex.TokenLParen); err != nil {
+	_, err = p.expect(lex.TokenLParen)
+	if err != nil {
 		return err
 	}
 
@@ -263,7 +287,8 @@ func (p *Parser) ParseCallExpression() error {
 		}
 	}
 
-	if _, err := p.expect(lex.TokenRParen); err != nil {
+	_, err = p.expect(lex.TokenRParen)
+	if err != nil {
 		return err
 	}
 
@@ -287,16 +312,19 @@ func (p *Parser) ParseCallExpression() error {
 
 // argument_list = expression , { "," , expression } ;
 func (p *Parser) ParseArgumentList() (int, error) {
-	if err := p.ParseExpression(); err != nil {
+	err := p.ParseExpression()
+	if err != nil {
 		return 0, err
 	}
 
 	count := 1
 	for p.curr.Type == lex.TokenComma {
-		if err := p.advance(); err != nil {
+		err := p.advance()
+		if err != nil {
 			return 0, err
 		}
-		if err := p.ParseExpression(); err != nil {
+		err = p.ParseExpression()
+		if err != nil {
 			return 0, err
 		}
 		count++

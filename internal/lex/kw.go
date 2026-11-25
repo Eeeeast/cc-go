@@ -1,6 +1,9 @@
 package lex
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
 
 const daRoot = 1
 const daCapacity = 256
@@ -37,15 +40,6 @@ func buildPrefixTree(entries []trieEntry) *trieNode {
 		curr.ttype = e.ttype
 	}
 	return root
-}
-
-func sortedKeys(m map[int]*trieNode) []int {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 func findBase(check []int, keys []int) int {
@@ -130,7 +124,7 @@ func buildLanguageTrie() *DoubleArrayTrie {
 		if len(node.children) == 0 {
 			return
 		}
-		keys := sortedKeys(node.children)
+		keys := slices.Sorted(maps.Keys(node.children))
 		b := findBase(da.check, keys)
 
 		da.base[state] = b
@@ -155,5 +149,6 @@ func (d *DoubleArrayTrie) Step(state int, ch rune) (int, bool) {
 	if next > 0 && next < len(d.check) && d.check[next] == state {
 		return next, true
 	}
+
 	return 0, false
 }

@@ -41,7 +41,7 @@ type valueKind uint8
 
 const (
 	valInt valueKind = iota
-	valVoid
+	valUnit
 )
 
 type value struct {
@@ -50,7 +50,18 @@ type value struct {
 }
 
 func intVal(n int64) value { return value{kind: valInt, num: n} }
-func voidVal() value       { return value{kind: valVoid} }
+func unitVal() value       { return value{kind: valUnit} }
+
+func (k valueKind) String() string {
+	switch k {
+	case valInt:
+		return "int"
+	case valUnit:
+		return "()"
+	default:
+		return fmt.Sprintf("valueKind(%d)", k)
+	}
+}
 
 type VM struct {
 	in    *bufio.Reader
@@ -74,7 +85,8 @@ func (v *VM) Run(code []Instruction) error {
 			v.push(intVal(ins.Arg))
 
 		case OpPop:
-			if _, err := v.pop(ins.Pos); err != nil {
+			_, err := v.pop(ins.Pos)
+			if err != nil {
 				return err
 			}
 
@@ -148,10 +160,11 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(v.out, "%d\n", x); err != nil {
+			_, err = fmt.Fprintf(v.out, "%d\n", x)
+			if err != nil {
 				return newRuntimeError(ins.Pos, "output error: %v", err)
 			}
-			v.push(voidVal())
+			v.push(unitVal())
 
 		case OpCallReadInt:
 			x, err := v.readInt(ins.Pos)
@@ -178,20 +191,14 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			if b < a {
-				a = b
-			}
-			v.push(intVal(a))
+			v.push(intVal(min(a, b)))
 
 		case OpCallMax:
 			b, a, err := v.popTwoInts(ins.Pos)
 			if err != nil {
 				return err
 			}
-			if b > a {
-				a = b
-			}
-			v.push(intVal(a))
+			v.push(intVal(max(a, b)))
 
 		default:
 			return newRuntimeError(ins.Pos, "unknown opcode %d", ins.Op)
@@ -221,12 +228,12 @@ func (v *VM) popInt(pos lex.SrcPos) (int64, error) {
 		return 0, err
 	}
 	if val.kind != valInt {
-		return 0, newRuntimeError(pos, "cannot use result of a function with no return value")
+		return 0, newRuntimeError(pos, "epected int, got %s", val.kind)
 	}
 	return val.num, nil
 }
 
-// popTwoInts снимает со стека правый (b), затем левый (a) операнд.
+// popTwoInts снимает со стека сначала правый `b`, затем левый `a` операнд.
 func (v *VM) popTwoInts(pos lex.SrcPos) (b int64, a int64, err error) {
 	b, err = v.popInt(pos)
 	if err != nil {

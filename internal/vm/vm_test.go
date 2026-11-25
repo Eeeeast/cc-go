@@ -113,12 +113,12 @@ func TestPrintln(t *testing.T) {
 	require.Equal(t, "1\n2\n", out)
 }
 
-func TestPrintlnVoidInArith(t *testing.T) {
+func TestPrintlnUnitInArith(t *testing.T) {
 	code := []Instruction{
 		ins(OpPush, 1), ins(OpPush, 2), ins(OpCallPrintln, 0), ins(OpAdd, 0),
 	}
 	_, err := run(t, code, "")
-	require.ErrorContains(t, err, "no return value")
+	require.ErrorContains(t, err, "epected int, got ()")
 }
 
 func TestReadInt(t *testing.T) {

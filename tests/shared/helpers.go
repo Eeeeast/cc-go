@@ -67,7 +67,8 @@ func collect(root, sourceExt, expectedExt, inputExt string) ([]Case, error) {
 		}
 		if inputExt != "" {
 			inputPath := stem + inputExt
-			if _, err := os.Stat(inputPath); err == nil {
+			_, err := os.Stat(inputPath)
+			if err == nil {
 				c.Input = inputPath
 			}
 		}
