@@ -118,7 +118,7 @@ func TestPrintlnUnitInArith(t *testing.T) {
 		ins(OpPush, 1), ins(OpPush, 2), ins(OpCallPrintln, 0), ins(OpAdd, 0),
 	}
 	_, err := run(t, code, "")
-	require.ErrorContains(t, err, "epected int, got ()")
+	require.ErrorContains(t, err, "expected int, got ()")
 }
 
 func TestReadInt(t *testing.T) {

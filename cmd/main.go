@@ -7,10 +7,10 @@ import (
 	"compiler/internal/driver"
 )
 
-const NumberOfArguments = 2
+const numberOfArguments = 2
 
 func main() {
-	if len(os.Args) != NumberOfArguments {
+	if len(os.Args) != numberOfArguments {
 		fmt.Fprintln(os.Stderr, "usage: minigo <source-file>")
 		os.Exit(1)
 	}

@@ -13,16 +13,7 @@ type ParseError struct {
 }
 
 func (e *ParseError) Error() string {
-	if e.Pos.SrcName == "" {
-		return e.Msg
-	}
-	if e.Pos.LineNo == 0 {
-		return fmt.Sprintf("%s: %s", e.Pos.SrcName, e.Msg)
-	}
-	if e.Pos.ColNo == 0 {
-		return fmt.Sprintf("%s:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Msg)
-	}
-	return fmt.Sprintf("%s:%d:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Pos.ColNo, e.Msg)
+	return e.Pos.FormatError(e.Msg)
 }
 
 func NewParseError(pos SrcPos, msg string) *ParseError {

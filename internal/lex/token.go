@@ -1,5 +1,7 @@
 package lex
 
+import "fmt"
+
 type TokenType int
 
 const (
@@ -78,4 +80,17 @@ func NewSrcPos(srcName string, lineNo int, colNo int) SrcPos {
 		LineNo:  lineNo,
 		ColNo:   colNo,
 	}
+}
+
+func (p SrcPos) FormatError(msg string) string {
+	if p.SrcName == "" {
+		return msg
+	}
+	if p.LineNo == 0 {
+		return fmt.Sprintf("%s: %s", p.SrcName, msg)
+	}
+	if p.ColNo == 0 {
+		return fmt.Sprintf("%s:%d: %s", p.SrcName, p.LineNo, msg)
+	}
+	return fmt.Sprintf("%s:%d:%d: %s", p.SrcName, p.LineNo, p.ColNo, msg)
 }

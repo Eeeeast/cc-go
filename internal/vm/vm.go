@@ -18,16 +18,7 @@ type RuntimeError struct {
 }
 
 func (e *RuntimeError) Error() string {
-	if e.Pos.SrcName == "" {
-		return e.Msg
-	}
-	if e.Pos.LineNo == 0 {
-		return fmt.Sprintf("%s: %s", e.Pos.SrcName, e.Msg)
-	}
-	if e.Pos.ColNo == 0 {
-		return fmt.Sprintf("%s:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Msg)
-	}
-	return fmt.Sprintf("%s:%d:%d: %s", e.Pos.SrcName, e.Pos.LineNo, e.Pos.ColNo, e.Msg)
+	return e.Pos.FormatError(e.Msg)
 }
 
 func newRuntimeError(pos lex.SrcPos, format string, args ...any) error {
@@ -67,6 +58,7 @@ type VM struct {
 	in    *bufio.Reader
 	out   io.Writer
 	stack []value
+	ip    int
 }
 
 func New(in io.Reader, out io.Writer) *VM {
@@ -78,8 +70,12 @@ func New(in io.Reader, out io.Writer) *VM {
 
 func (v *VM) Run(code []Instruction) error {
 	v.stack = v.stack[:0]
+	v.ip = 0
 
-	for _, ins := range code {
+	for v.ip < len(code) {
+		ins := code[v.ip]
+		v.ip++
+
 		switch ins.Op {
 		case OpPush:
 			v.push(intVal(ins.Arg))
@@ -228,7 +224,7 @@ func (v *VM) popInt(pos lex.SrcPos) (int64, error) {
 		return 0, err
 	}
 	if val.kind != valInt {
-		return 0, newRuntimeError(pos, "epected int, got %s", val.kind)
+		return 0, newRuntimeError(pos, "expected int, got %s", val.kind)
 	}
 	return val.num, nil
 }
