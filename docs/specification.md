@@ -117,7 +117,7 @@ break continue for if else func struct return true false type var
 
 ```ebnf
 (* Программа состоит из функции main *)
-program = "func" , identifier , "(" , ")" , "{" , { statement } , "}" , ? конец файла ? ;
+program = "func" , "main" , "(" , ")" , "{" , { statement } , "}" , ? конец файла ? ;
 
 (* Инструкция — выражение, завершённое точкой с запятой *)
 statement = expression , ";" ;
