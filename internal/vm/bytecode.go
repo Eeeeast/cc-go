@@ -5,19 +5,19 @@ import "compiler/internal/lex"
 type OpCode uint8
 
 const (
-	OpPush        OpCode = iota // arg: int64
-	OpPop                       // сброс результата выражения-инструкции
-	OpAdd                       // +
-	OpSub                       // -
-	OpMul                       // *
-	OpDiv                       // /
-	OpMod                       // %
-	OpNeg                       // унарный -
-	OpCallPrintln               // fmt.Println(x) -> кладёт Void
-	OpCallReadInt               // fmt.ReadInt()  -> кладёт Int
-	OpCallAbs                   // abs(x)         -> кладёт Int
-	OpCallMin                   // min(a, b)      -> кладёт Int
-	OpCallMax                   // max(a, b)      -> кладёт Int
+	OpPush OpCode = iota
+	OpPop
+	OpAdd
+	OpSub
+	OpMul
+	OpDiv
+	OpMod
+	OpNeg
+	OpCallPrintln
+	OpCallReadInt
+	OpCallAbs
+	OpCallMin
+	OpCallMax
 )
 
 type Instruction struct {

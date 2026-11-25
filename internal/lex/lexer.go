@@ -169,7 +169,8 @@ func (l *Lexer) EatWS() error {
 }
 
 func (l *Lexer) NextToken() (Token, error) {
-	if err := l.EatWS(); err != nil {
+	err := l.EatWS()
+	if err != nil {
 		return Token{}, err
 	}
 	pos := l.GetPos()
