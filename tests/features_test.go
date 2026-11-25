@@ -13,7 +13,6 @@ import (
 
 func TestFeatures(t *testing.T) {
 	for _, c := range shared.MustCollect("features", ".mgo", ".stdout", ".stdin") {
-		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			var in string
 			if c.Input != "" {

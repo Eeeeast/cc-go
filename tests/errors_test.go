@@ -13,7 +13,6 @@ import (
 
 func TestErrors(t *testing.T) {
 	for _, c := range shared.MustCollect("errors", ".mgo", ".stderr", ".stdin") {
-		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			var in string
 			if c.Input != "" {
