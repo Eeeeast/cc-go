@@ -1,0 +1,3 @@
+func main() {
+	fmt.Println(max(0, min(100, fmt.ReadInt())));
+}

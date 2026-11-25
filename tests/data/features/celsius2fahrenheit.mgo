@@ -1,0 +1,3 @@
+func main() {
+	fmt.Println(fmt.ReadInt()*9/5 + 32);
+}
