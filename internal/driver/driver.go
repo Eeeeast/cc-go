@@ -3,6 +3,7 @@ package driver
 import (
 	"io"
 
+	"compiler/internal/codegen"
 	"compiler/internal/lex"
 	"compiler/internal/parser"
 	"compiler/internal/vm"
@@ -17,7 +18,11 @@ func Interpret(stdin io.Reader, stdout io.Writer, path string) error {
 	if err != nil {
 		return err
 	}
-	code, err := p.ParseProgram()
+	prog, err := p.ParseProgram()
+	if err != nil {
+		return err
+	}
+	code, err := codegen.Generate(prog)
 	if err != nil {
 		return err
 	}

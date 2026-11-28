@@ -12,6 +12,8 @@ import (
 	"compiler/internal/lex"
 )
 
+const maxCallDepth = 10000
+
 type RuntimeError struct {
 	Pos lex.SrcPos
 	Msg string
@@ -28,37 +30,18 @@ func newRuntimeError(pos lex.SrcPos, format string, args ...any) error {
 	}
 }
 
-type valueKind uint8
-
-const (
-	valInt valueKind = iota
-	valUnit
-)
-
-type value struct {
-	kind valueKind
-	num  int64
-}
-
-func intVal(n int64) value { return value{kind: valInt, num: n} }
-func unitVal() value       { return value{kind: valUnit} }
-
-func (k valueKind) String() string {
-	switch k {
-	case valInt:
-		return "int"
-	case valUnit:
-		return "()"
-	default:
-		return fmt.Sprintf("valueKind(%d)", k)
-	}
+type callFrame struct {
+	retIP int
+	base  int
 }
 
 type VM struct {
-	in    *bufio.Reader
-	out   io.Writer
-	stack []value
-	ip    int
+	in      *bufio.Reader
+	out     io.Writer
+	globals []int64
+	stack   []int64
+	frames  []callFrame
+	ip      int
 }
 
 func New(in io.Reader, out io.Writer) *VM {
@@ -68,26 +51,28 @@ func New(in io.Reader, out io.Writer) *VM {
 	}
 }
 
-func (v *VM) Run(code []Instruction) error {
+func (v *VM) Run(prog *Program) error {
+	v.globals = make([]int64, prog.NumGlobals)
 	v.stack = v.stack[:0]
+	v.frames = v.frames[:0]
 	v.ip = 0
 
+	code := prog.Code
 	for v.ip < len(code) {
 		ins := code[v.ip]
 		v.ip++
 
 		switch ins.Op {
 		case OpPush:
-			v.push(intVal(ins.Arg))
+			v.push(ins.Arg)
 
 		case OpPop:
-			_, err := v.pop(ins.Pos)
-			if err != nil {
+			if _, err := v.pop(ins.Pos); err != nil {
 				return err
 			}
 
 		case OpAdd:
-			b, a, err := v.popTwoInts(ins.Pos)
+			b, a, err := v.popTwo(ins.Pos)
 			if err != nil {
 				return err
 			}
@@ -95,10 +80,10 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			v.push(intVal(res))
+			v.push(res)
 
 		case OpSub:
-			b, a, err := v.popTwoInts(ins.Pos)
+			b, a, err := v.popTwo(ins.Pos)
 			if err != nil {
 				return err
 			}
@@ -106,10 +91,10 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			v.push(intVal(res))
+			v.push(res)
 
 		case OpMul:
-			b, a, err := v.popTwoInts(ins.Pos)
+			b, a, err := v.popTwo(ins.Pos)
 			if err != nil {
 				return err
 			}
@@ -117,10 +102,10 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			v.push(intVal(res))
+			v.push(res)
 
 		case OpDiv:
-			b, a, err := v.popTwoInts(ins.Pos)
+			b, a, err := v.popTwo(ins.Pos)
 			if err != nil {
 				return err
 			}
@@ -128,10 +113,10 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			v.push(intVal(res))
+			v.push(res)
 
 		case OpMod:
-			b, a, err := v.popTwoInts(ins.Pos)
+			b, a, err := v.popTwo(ins.Pos)
 			if err != nil {
 				return err
 			}
@@ -139,38 +124,120 @@ func (v *VM) Run(code []Instruction) error {
 			if err != nil {
 				return err
 			}
-			v.push(intVal(res))
+			v.push(res)
 
 		case OpNeg:
-			a, err := v.popInt(ins.Pos)
+			a, err := v.pop(ins.Pos)
 			if err != nil {
 				return err
 			}
 			if a == math.MinInt64 {
 				return newRuntimeError(ins.Pos, "integer overflow in unary negation")
 			}
-			v.push(intVal(-a))
+			v.push(-a)
 
-		case OpCallPrintln:
-			x, err := v.popInt(ins.Pos)
+		case OpLoadGlobal:
+			idx := int(ins.Arg)
+			if idx < 0 || idx >= len(v.globals) {
+				return newRuntimeError(ins.Pos, "invalid global slot %d", idx)
+			}
+			v.push(v.globals[idx])
+
+		case OpStoreGlobal:
+			val, err := v.pop(ins.Pos)
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(v.out, "%d\n", x)
+			idx := int(ins.Arg)
+			if idx < 0 || idx >= len(v.globals) {
+				return newRuntimeError(ins.Pos, "invalid global slot %d", idx)
+			}
+			v.globals[idx] = val
+
+		case OpLoadLocal:
+			if len(v.frames) == 0 {
+				return newRuntimeError(ins.Pos, "local access outside function")
+			}
+			idx := v.frames[len(v.frames)-1].base + int(ins.Arg)
+			v.push(v.stack[idx])
+
+		case OpStoreLocal:
+			if len(v.frames) == 0 {
+				return newRuntimeError(ins.Pos, "local store outside function")
+			}
+			val, err := v.pop(ins.Pos)
 			if err != nil {
+				return err
+			}
+			idx := v.frames[len(v.frames)-1].base + int(ins.Arg)
+			v.stack[idx] = val
+
+		case OpCall:
+			funcIdx := int(ins.Arg)
+			if funcIdx < 0 || funcIdx >= len(prog.Functions) {
+				return newRuntimeError(ins.Pos, "invalid function index %d", funcIdx)
+			}
+			if len(v.frames) >= maxCallDepth {
+				return newRuntimeError(ins.Pos, "stack overflow: max call depth exceeded")
+			}
+			fn := prog.Functions[funcIdx]
+			if len(v.stack) < fn.Arity {
+				return newRuntimeError(ins.Pos, "stack underflow on call to %s", fn.Name)
+			}
+			base := len(v.stack) - fn.Arity
+			for i := fn.Arity; i < fn.NumLocals; i++ {
+				v.stack = append(v.stack, 0)
+			}
+			v.frames = append(v.frames, callFrame{
+				retIP: v.ip,
+				base:  base,
+			})
+			v.ip = fn.Addr
+
+		case OpReturn:
+			if len(v.frames) == 0 {
+				return newRuntimeError(ins.Pos, "return outside function")
+			}
+			frame := v.frames[len(v.frames)-1]
+			v.frames = v.frames[:len(v.frames)-1]
+			v.stack = v.stack[:frame.base]
+			v.ip = frame.retIP
+
+		case OpReturnVal:
+			if len(v.frames) == 0 {
+				return newRuntimeError(ins.Pos, "return outside function")
+			}
+			retVal, err := v.pop(ins.Pos)
+			if err != nil {
+				return err
+			}
+			frame := v.frames[len(v.frames)-1]
+			v.frames = v.frames[:len(v.frames)-1]
+			v.stack = v.stack[:frame.base]
+			v.push(retVal)
+			v.ip = frame.retIP
+
+		case OpHalt:
+			return nil
+
+		case OpCallPrintln:
+			x, err := v.pop(ins.Pos)
+			if err != nil {
+				return err
+			}
+			if _, err = fmt.Fprintf(v.out, "%d\n", x); err != nil {
 				return newRuntimeError(ins.Pos, "output error: %v", err)
 			}
-			v.push(unitVal())
 
 		case OpCallReadInt:
 			x, err := v.readInt(ins.Pos)
 			if err != nil {
 				return err
 			}
-			v.push(intVal(x))
+			v.push(x)
 
 		case OpCallAbs:
-			x, err := v.popInt(ins.Pos)
+			x, err := v.pop(ins.Pos)
 			if err != nil {
 				return err
 			}
@@ -180,21 +247,25 @@ func (v *VM) Run(code []Instruction) error {
 			if x < 0 {
 				x = -x
 			}
-			v.push(intVal(x))
+			v.push(x)
 
 		case OpCallMin:
-			b, a, err := v.popTwoInts(ins.Pos)
+			res, err := v.popVariadicFold(int(ins.Arg), ins.Pos, func(a, b int64) int64 {
+				return min(a, b)
+			})
 			if err != nil {
 				return err
 			}
-			v.push(intVal(min(a, b)))
+			v.push(res)
 
 		case OpCallMax:
-			b, a, err := v.popTwoInts(ins.Pos)
+			res, err := v.popVariadicFold(int(ins.Arg), ins.Pos, func(a, b int64) int64 {
+				return max(a, b)
+			})
 			if err != nil {
 				return err
 			}
-			v.push(intVal(max(a, b)))
+			v.push(res)
 
 		default:
 			return newRuntimeError(ins.Pos, "unknown opcode %d", ins.Op)
@@ -204,13 +275,13 @@ func (v *VM) Run(code []Instruction) error {
 	return nil
 }
 
-func (v *VM) push(val value) {
+func (v *VM) push(val int64) {
 	v.stack = append(v.stack, val)
 }
 
-func (v *VM) pop(pos lex.SrcPos) (value, error) {
+func (v *VM) pop(pos lex.SrcPos) (int64, error) {
 	if len(v.stack) == 0 {
-		return value{}, newRuntimeError(pos, "stack underflow")
+		return 0, newRuntimeError(pos, "stack underflow")
 	}
 	n := len(v.stack) - 1
 	val := v.stack[n]
@@ -218,28 +289,34 @@ func (v *VM) pop(pos lex.SrcPos) (value, error) {
 	return val, nil
 }
 
-func (v *VM) popInt(pos lex.SrcPos) (int64, error) {
-	val, err := v.pop(pos)
-	if err != nil {
-		return 0, err
-	}
-	if val.kind != valInt {
-		return 0, newRuntimeError(pos, "expected int, got %s", val.kind)
-	}
-	return val.num, nil
-}
-
-// popTwoInts снимает со стека сначала правый `b`, затем левый `a` операнд.
-func (v *VM) popTwoInts(pos lex.SrcPos) (b int64, a int64, err error) {
-	b, err = v.popInt(pos)
+func (v *VM) popTwo(pos lex.SrcPos) (b int64, a int64, err error) {
+	b, err = v.pop(pos)
 	if err != nil {
 		return 0, 0, err
 	}
-	a, err = v.popInt(pos)
+	a, err = v.pop(pos)
 	if err != nil {
 		return 0, 0, err
 	}
 	return b, a, nil
+}
+
+func (v *VM) popVariadicFold(argc int, pos lex.SrcPos, fn func(a, b int64) int64) (int64, error) {
+	if argc < 1 {
+		return 0, newRuntimeError(pos, "expected at least 1 argument")
+	}
+	acc, err := v.pop(pos)
+	if err != nil {
+		return 0, err
+	}
+	for i := 1; i < argc; i++ {
+		val, err := v.pop(pos)
+		if err != nil {
+			return 0, err
+		}
+		acc = fn(acc, val)
+	}
+	return acc, nil
 }
 
 func (v *VM) readInt(pos lex.SrcPos) (int64, error) {

@@ -117,63 +117,52 @@ break continue for if else func struct return true false type var
 Программа состоит из объявлений верхнего уровня: глобальных переменных и пользовательских функций. Точка входа — единственная функция `func main()` без параметров и возвращаемого значения.
 
 ```ebnf
-(* Программа — последовательность объявлений верхнего уровня *)
 program = { top_level_decl } , ? конец файла ? ;
 
 top_level_decl = global_var_decl
                | func_decl ;
 
-(* Объявление глобальной переменной; инициализатор опционален *)
 global_var_decl = "var" , identifier , type , [ "=" , global_initializer ] , ";" ;
 
-global_initializer = global_additive_expr ;
-global_additive_expr = global_multiplicative_expr , { ( "+" | "-" ) , global_multiplicative_expr } ;
-global_multiplicative_expr = global_unary_expr , { ( "*" | "/" | "%" ) , global_unary_expr } ;
-global_unary_expr = "-" , global_unary_expr | global_primary_expr ;
-global_primary_expr = integer_literal
-                    | "(" , global_initializer , ")" ;
+global_initializer = global_additive_expression ;
+global_additive_expression = global_multiplicative_expression , { ( "+" | "-" ) , global_multiplicative_expression } ;
+global_multiplicative_expression = global_unary_expression , { ( "*" | "/" | "%" ) , global_unary_expression } ;
+global_unary_expression = "-" , global_unary_expression | global_primary_expression ;
+global_primary_expression = integer_literal
+                          | "(" , global_initializer , ")" ;
 
-(* Объявление функции; возвращаемый тип опционален *)
 func_decl = "func" , identifier , "(" , [ param_list ] , ")" , [ type ] , block ;
 param_list = param , { "," , param } ;
 param = identifier , type ;
 
-(* Тип данных *)
 type = "int" ;
 
-(* Блок инструкций *)
 block = "{" , { statement } , "}" ;
 
-(* Инструкции *)
 statement = local_var_decl
-          | return_stmt
+          | return_statement
           | block
-          | assignment_stmt
-          | expression_stmt ;
+          | assignment_statement
+          | expression_statement ;
 
 local_var_decl = "var" , identifier , type , [ "=" , expression ] , ";" ;
-return_stmt = "return" , [ expression ] , ";" ;
-assignment_stmt = identifier , "=" , expression , ";" ;
-expression_stmt = expression , ";" ;
+return_statement = "return" , [ expression ] , ";" ;
+assignment_statement = identifier , "=" , expression , ";" ;
+expression_statement = expression , ";" ;
 
-(* Выражения *)
 expression = additive_expression ;
 
-(* Сложение и вычитание *)
 additive_expression = multiplicative_expression , { ( "+" | "-" ) , multiplicative_expression } ;
 
-(* Умножение, деление и остаток от деления *)
 multiplicative_expression = unary_expression , { ( "*" | "/" | "%" ) , unary_expression } ;
 
-(* Унарный минус *)
 unary_expression = "-" , unary_expression | primary_expression ;
 
-(* Элементарное выражение: литерал, переменная, вызов функции или скобки *)
 primary_expression = integer_literal
-                   | identifier , [ [ "." , identifier ] , "(" , [ argument_list ] , ")" ]
+                   | identifier , [ call_suffix ]
                    | "(" , expression , ")" ;
 
-(* Аргументы вызова функции *)
+call_suffix = [ "." , identifier ] , "(" , [ argument_list ] , ")" ;
 argument_list = expression , { "," , expression } ;
 ```
 
